@@ -1,0 +1,78 @@
+name: Build BlueMeter Lite APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-apk.yml"
+      - "patch/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Lite patch kit
+        uses: actions/checkout@v4
+
+      - name: Clone BlueMeter upstream
+        run: |
+          git clone --depth 1 https://github.com/jbourny/bluemetermobile.git upstream
+
+      - name: Record upstream revision
+        run: git -C upstream rev-parse HEAD > upstream/UPSTREAM_COMMIT.txt
+
+      - name: Apply Lite patch
+        run: |
+          python3 patch/apply_lite_patch.py upstream
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show versions
+        run: |
+          java -version
+          flutter --version
+
+      - name: Install dependencies
+        working-directory: upstream
+        run: flutter pub get
+
+      - name: Build release APKs
+        working-directory: upstream
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bluemeter-lite-apk
+          path: upstream/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Prepare corresponding source artifact
+        run: |
+          rm -rf upstream/.git
+          rm -rf upstream/build
+
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: bluemeter-lite-patched-source
+          path: upstream
+          include-hidden-files: true
+          retention-days: 30
