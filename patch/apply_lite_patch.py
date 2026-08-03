@@ -353,7 +353,7 @@ def main() -> None:
     )
     yaml = regex_once(
         yaml,
-        r"^version:\s*.+$",
+        r"^version:\s*[^\r\n]+$",
         "version: 1.2.0+5",
         "pubspec version",
     )
