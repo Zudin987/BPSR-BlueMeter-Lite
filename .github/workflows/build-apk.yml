@@ -3,7 +3,8 @@ name: Build BlueMeter Lite APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - ".github/workflows/build-apk.yml"
       - "patch/**"
@@ -25,7 +26,8 @@ jobs:
           git clone --depth 1 https://github.com/jbourny/bluemetermobile.git upstream
 
       - name: Record upstream revision
-        run: git -C upstream rev-parse HEAD > upstream/UPSTREAM_COMMIT.txt
+        run: |
+          git -C upstream rev-parse HEAD > upstream/UPSTREAM_COMMIT.txt
 
       - name: Apply Lite patch
         run: |
@@ -47,14 +49,84 @@ jobs:
         run: |
           java -version
           flutter --version
+          dart --version
+
+      - name: Add Dart SDK constraint
+        working-directory: upstream
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("pubspec.yaml")
+          lines = path.read_text(encoding="utf-8").splitlines()
+
+          environment_index = next(
+              (
+                  index
+                  for index, line in enumerate(lines)
+                  if line.strip() == "environment:"
+              ),
+              None,
+          )
+
+          if environment_index is None:
+              dependencies_index = next(
+                  index
+                  for index, line in enumerate(lines)
+                  if line.strip() == "dependencies:"
+              )
+
+              lines[dependencies_index:dependencies_index] = [
+                  "environment:",
+                  "  sdk: ^3.12.0",
+                  "",
+              ]
+          else:
+              section_end = next(
+                  (
+                      index
+                      for index in range(environment_index + 1, len(lines))
+                      if lines[index]
+                      and not lines[index].startswith((" ", "\t"))
+                  ),
+                  len(lines),
+              )
+
+              sdk_index = next(
+                  (
+                      index
+                      for index in range(
+                          environment_index + 1,
+                          section_end,
+                      )
+                      if lines[index].strip().startswith("sdk:")
+                  ),
+                  None,
+              )
+
+              if sdk_index is None:
+                  lines.insert(
+                      environment_index + 1,
+                      "  sdk: ^3.12.0",
+                  )
+              else:
+                  lines[sdk_index] = "  sdk: ^3.12.0"
+
+          path.write_text(
+              "\n".join(lines) + "\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Install dependencies
         working-directory: upstream
-        run: flutter pub get
+        run: |
+          flutter pub get
 
       - name: Build release APKs
         working-directory: upstream
-        run: flutter build apk --release --split-per-abi
+        run: |
+          flutter build apk --release --split-per-abi
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
