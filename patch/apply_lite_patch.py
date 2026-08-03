@@ -259,7 +259,7 @@ def main() -> None:
     )
     dart = dart.replace(
         "// Update overlay at 2 FPS (500ms) to prevent log spam and UI overload",
-        "// Lite: update the fixed overlay once per second",
+        "// Lite: update the adaptive DPS overlay once per second",
     )
 
     data_block_start = dart.find(
@@ -332,7 +332,7 @@ def main() -> None:
     dart = regex_once(
         dart,
         r"height:\s*400,\s*width:\s*600,",
-        "height: 226,\n      width: 360,",
+        "height: 108,\n      width: 400,",
         "overlay dimensions",
     )
     dart = replace_once(
@@ -354,7 +354,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.2.0+5",
+        "version: 1.3.0+6",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")

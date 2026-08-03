@@ -14,7 +14,7 @@ Included:
 - Player name
 - Encounter timer
 - Manual reset button
-- Fixed compact overlay
+- Adaptive and manually resizable overlay
 - Local Android VPN capture
 - No PC required
 
@@ -28,14 +28,14 @@ Removed from the active UI/data bridge:
 - Timeline graph
 - Player detail screen
 - Heal/taken tabs
-- Overlay themes and resizing
+- Overlay themes and detailed configuration panels
 - Monster and position serialization
 
 Low-resource changes:
 
 - Overlay updates once per second instead of twice per second
 - Only six small fields are sent to the overlay per player
-- Only the top eight damage dealers are shown
+- Up to 20 damage dealers are shown, with automatic party/raid layouts
 - No monster, skill, timeline or position data is copied to the overlay isolate
 - DPS storage no longer allocates skill, per-target, timeline, healing or damage-taken records
 - TCP writes use a pending-write queue instead of assuming a non-blocking
@@ -76,6 +76,14 @@ patch, builds release APKs, and uploads them as an artifact.
 Android will show a VPN indicator and a persistent service notification while
 the meter is active. Only installed supported BPSR packages are added to the
 VPN allow-list.
+
+## Adaptive overlay
+
+- Auto mode sizes the window for solo, 5-player, 10-player, and 20-player use.
+- Wide raid mode splits up to 20 players into two columns.
+- The header can move the window and the bottom-right handle can resize it.
+- Text and row density adapt to the actual window dimensions.
+- The local player is highlighted and remains visible if outside the top 20.
 
 ## Ping expectations
 
