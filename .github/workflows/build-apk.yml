@@ -33,6 +33,20 @@ jobs:
         run: |
           python3 patch/apply_lite_patch.py upstream
 
+      - name: Verify patched pubspec
+        working-directory: upstream
+        run: |
+          echo "Checking that pubspec.yaml was not truncated..."
+
+          grep -q "^name:" pubspec.yaml
+          grep -q "^version:" pubspec.yaml
+          grep -q "^environment:" pubspec.yaml
+          grep -q "^dependencies:" pubspec.yaml
+          grep -q "^flutter:" pubspec.yaml
+
+          echo "pubspec.yaml looks complete."
+          cat pubspec.yaml
+
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
@@ -50,73 +64,6 @@ jobs:
           java -version
           flutter --version
           dart --version
-
-      - name: Add Dart SDK constraint
-        working-directory: upstream
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("pubspec.yaml")
-          lines = path.read_text(encoding="utf-8").splitlines()
-
-          environment_index = next(
-              (
-                  index
-                  for index, line in enumerate(lines)
-                  if line.strip() == "environment:"
-              ),
-              None,
-          )
-
-          if environment_index is None:
-              dependencies_index = next(
-                  index
-                  for index, line in enumerate(lines)
-                  if line.strip() == "dependencies:"
-              )
-
-              lines[dependencies_index:dependencies_index] = [
-                  "environment:",
-                  "  sdk: ^3.12.0",
-                  "",
-              ]
-          else:
-              section_end = next(
-                  (
-                      index
-                      for index in range(environment_index + 1, len(lines))
-                      if lines[index]
-                      and not lines[index].startswith((" ", "\t"))
-                  ),
-                  len(lines),
-              )
-
-              sdk_index = next(
-                  (
-                      index
-                      for index in range(
-                          environment_index + 1,
-                          section_end,
-                      )
-                      if lines[index].strip().startswith("sdk:")
-                  ),
-                  None,
-              )
-
-              if sdk_index is None:
-                  lines.insert(
-                      environment_index + 1,
-                      "  sdk: ^3.12.0",
-                  )
-              else:
-                  lines[sdk_index] = "  sdk: ^3.12.0"
-
-          path.write_text(
-              "\n".join(lines) + "\n",
-              encoding="utf-8",
-          )
-          PY
 
       - name: Install dependencies
         working-directory: upstream
