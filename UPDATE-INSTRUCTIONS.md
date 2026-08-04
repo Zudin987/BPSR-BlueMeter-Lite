@@ -1,51 +1,62 @@
-# BlueMeter Lite v0.6 update
+# BlueMeter Lite v0.7 — Season 3 and sub-profession correction
 
 Replace these GitHub files:
 
 1. `patch/overlay_widget_lite.dart`
 2. `patch/apply_lite_patch.py`
 
-## Exact mode-switch sizes
+## Season 3 correction
 
-### Compact
+BlueMeter previously treated `12690/12691` as season strength. Those IDs are
+season-damage-increase percentage attributes. v0.7 changes the parser to:
 
-When switching from Expanded to Compact, the overlay immediately becomes:
+- `11440` — Illusion-Breaking Strength
+- `11441` — total Illusion-Breaking Strength
 
-`180 × 56`
+If the value is unavailable, Expanded mode shows an em dash instead of a fake
+zero, for example: `(49632+—)`.
 
-This is also the manual minimum size allowed in Compact mode.
+## Correct base profession names
 
-Users can then drag the resize handle to make it larger.
+- Stormblade
+- Frost Mage
+- Twin Striker
+- Wind Knight
+- Verdant Oracle
+- Dorothy
+- Heavy Guardian
+- Dark Spirit Dance Ritual Blade
+- Marksman
+- Shield Knight
+- Beat Performer
+- Lucy
+- Natsu
 
-### Expanded
+The previous `Soul Musician` label is corrected to `Beat Performer`.
 
-When switching from Compact to Expanded, the overlay immediately becomes:
+## ZDPS-style sub-profession detection
 
-`360 × 180`
+A lightweight runtime map detects these specs from distinctive damage skill IDs:
 
-Expanded mode keeps a manual minimum width of 360 px and a manual minimum
-height of 96 px. The mode switch itself always uses 360 × 180.
+- Iaido / Moonstrike
+- Icicle / Frostbeam
+- Formless Expertise / Crimson Expertise
+- Vanguard / Skyward
+- Smite / Lifebind
+- Earthfort / Block
+- Wildpack / Falconry
+- Recovery / Shield
+- Dissonance / Concerto
 
-## Row density
+Expanded mode prefers the detected sub-profession. Until a distinctive skill is
+seen, it falls back to the base profession name.
 
-- Compact row height: 10 px
-- Expanded row height: 11 px
-- Both are approximately half of the previous v0.5 row heights.
-- Font ranges, row padding, and owner markers were reduced to match.
-- The player list remains one column and scrollable at every overlay size.
+## Limitation
 
-## Behaviour change
-
-Player-count changes no longer automatically resize the overlay. This prevents
-the app from overriding the size selected by the user after switching modes or
-manually resizing.
-
-## Initial size
-
-A fresh app launch starts in Expanded mode at:
-
-`360 × 180`
+Illusion-Breaking Strength is not normally AOI-synced for other nearby players.
+It may be available reliably only for the local character. The app therefore
+shows `—` when the network stream does not contain the value.
 
 ## Version
 
-`1.7.0+10`
+`1.8.0+11`

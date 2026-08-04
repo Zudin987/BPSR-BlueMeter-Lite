@@ -398,23 +398,62 @@ void _toggleViewMode() {
 Color _classColor(String className) {
   switch (className) {
     case 'Stormblade':
-      return const Color(0xFF5A8DFF);
+    case 'Iaido':
+    case 'Moonstrike':
+      return const Color(0xFF805AA3);
+
     case 'Frost Mage':
-      return const Color(0xFF9D7BFF);
+    case 'Icicle':
+    case 'Frostbeam':
+      return const Color(0xFF7788D4);
+
+    case 'Twin Striker':
+    case 'Formless Expertise':
+    case 'Crimson Expertise':
+      return const Color(0xFFBA7F12);
+
     case 'Wind Knight':
-      return const Color(0xFF4EC7A7);
+    case 'Vanguard':
+    case 'Skyward':
+      return const Color(0xFF799A9C);
+
     case 'Verdant Oracle':
-      return const Color(0xFF78C96B);
+    case 'Smite':
+    case 'Lifebind':
+      return const Color(0xFF639C70);
+
     case 'Heavy Guardian':
-      return const Color(0xFFD99A55);
+    case 'Earthfort':
+    case 'Block':
+      return const Color(0xFF7D6033);
+
     case 'Marksman':
-      return const Color(0xFFD9C25A);
+    case 'Wildpack':
+    case 'Falconry':
+      return const Color(0xFF8E8B47);
+
     case 'Shield Knight':
-      return const Color(0xFF788BD9);
-    case 'Soul Musician':
-      return const Color(0xFFD978B5);
+    case 'Recovery':
+    case 'Shield':
+      return const Color(0xFF9C9B75);
+
+    case 'Beat Performer':
+    case 'Dissonance':
+    case 'Concerto':
+      return const Color(0xFF9C5353);
+
+    case 'Lucy':
+    case 'Natsu':
+      return const Color(0xFFDB8787);
+
+    case 'Dorothy':
+      return const Color(0xFFB87552);
+
+    case 'Dark Spirit Dance Ritual Blade':
+      return const Color(0xFF8D6A9F);
+
     default:
-      return const Color(0xFF6D8FC7);
+      return const Color(0xFF67AEF6);
   }
 }
 
@@ -423,15 +462,21 @@ String _expandedIdentity(Map<String, dynamic> player) {
   final name = (rawName == null || rawName.isEmpty) ? 'Unknown' : rawName;
   final className = (player['className'] as String?)?.trim() ?? '';
   final combatPower = ((player['combatPower'] as num?) ?? 0).toInt();
-  final seasonStrength = ((player['seasonStrength'] as num?) ?? 0).toInt();
+  final illusionBreakingStrength =
+      ((player['illusionBreakingStrength'] as num?) ?? 0).toInt();
 
   final ownerPrefix = player['isMe'] == true ? '★ ' : '';
   final classPart =
       className.isEmpty || className == 'Unknown' ? '' : ' — $className';
 
   String scorePart = '';
-  if (combatPower > 0 || seasonStrength > 0) {
-    scorePart = ' ($combatPower+$seasonStrength)';
+  if (combatPower > 0 && illusionBreakingStrength > 0) {
+    scorePart = ' ($combatPower+$illusionBreakingStrength)';
+  } else if (combatPower > 0) {
+    // The game may not AOI-sync this Season 3 value for other players.
+    scorePart = ' ($combatPower+—)';
+  } else if (illusionBreakingStrength > 0) {
+    scorePart = ' (—+$illusionBreakingStrength)';
   }
 
   return '$ownerPrefix$name$classPart$scorePart';

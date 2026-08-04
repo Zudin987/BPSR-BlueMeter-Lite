@@ -51,6 +51,7 @@ def main() -> None:
     manifest = upstream / "android/app/src/main/AndroidManifest.xml"
     app_gradle = upstream / "android/app/build.gradle.kts"
     data_storage = upstream / "lib/core/state/data_storage.dart"
+    attr_type = upstream / "lib/core/models/attr_type.dart"
     icon_patch_root = patch_dir / "android_icons"
 
     for required in (
@@ -61,6 +62,7 @@ def main() -> None:
         manifest,
         app_gradle,
         data_storage,
+        attr_type,
         icon_patch_root,
     ):
         if not required.exists():
@@ -168,6 +170,24 @@ def main() -> None:
                 fail(f"missing launcher icon asset: {source_icon}")
             shutil.copyfile(source_icon, target_folder / icon_name)
 
+    # Season 3 fix. BlueMeter previously used 12690/12691, which are
+    # season-damage-increase percentage attributes. Illusion-Breaking Strength
+    # is AttrSeasonStrength 11440, with total variant 11441.
+    attr_text = attr_type.read_text(encoding="utf-8")
+    attr_text = replace_once(
+        attr_text,
+        "  attrSeasonStrength(12690),",
+        "  attrSeasonStrength(11440),",
+        "Season 3 Illusion-Breaking Strength base attribute",
+    )
+    attr_text = replace_once(
+        attr_text,
+        "  attrSeasonStrengthTotal(12691),",
+        "  attrSeasonStrengthTotal(11441),",
+        "Season 3 Illusion-Breaking Strength total attribute",
+    )
+    attr_type.write_text(attr_text, encoding="utf-8")
+
     # Keep only the counters required for a DPS ranking. This avoids per-hit
     # skill, target, timeline, healing, and damage-taken allocations.
     storage_text = data_storage.read_text(encoding="utf-8")
@@ -184,6 +204,108 @@ def main() -> None:
         fail("could not locate DataStorage combat methods")
 
     lite_combat_methods = r"""
+  final Map<Int64, String> _liteSubProfessionNames = {};
+
+  String? getLiteSubProfessionName(Int64 uid) {
+    return _liteSubProfessionNames[uid];
+  }
+
+  String? _liteSubProfessionFromSkillId(String? rawSkillId) {
+    if (rawSkillId == null || rawSkillId.isEmpty) return null;
+
+    final skillId = int.tryParse(rawSkillId);
+    if (skillId == null) return null;
+
+    // Current ZDPS sub-profession detection IDs.
+    switch (skillId) {
+      case 1714:
+      case 1734:
+        return 'Iaido';
+
+      case 1715:
+      case 1738:
+      case 179906:
+        return 'Moonstrike';
+
+      case 120901:
+      case 120902:
+        return 'Icicle';
+
+      case 1241:
+        return 'Frostbeam';
+
+      case 160102:
+      case 2208181:
+      case 2208172:
+        return 'Formless Expertise';
+
+      case 1606:
+      case 1621:
+      case 1622:
+      case 35104:
+        return 'Crimson Expertise';
+
+      case 1405:
+      case 1418:
+        return 'Vanguard';
+
+      case 1419:
+        return 'Skyward';
+
+      case 1518:
+      case 1541:
+      case 21402:
+        return 'Smite';
+
+      case 20301:
+        return 'Lifebind';
+
+      case 1941:
+      case 2201240:
+        return 'Earthfort';
+
+      case 1930:
+      case 1931:
+      case 1934:
+      case 1935:
+        return 'Block';
+
+      case 2292:
+      case 1700820:
+      case 1700825:
+      case 1700827:
+        return 'Wildpack';
+
+      case 220112:
+      case 2203622:
+      case 220106:
+        return 'Falconry';
+
+      case 2405:
+      case 2411:
+      case 2206401:
+        return 'Recovery';
+
+      case 2406:
+      case 55412:
+      case 55417:
+        return 'Shield';
+
+      case 2321:
+      case 2335:
+        return 'Dissonance';
+
+      case 2301:
+      case 2336:
+      case 2361:
+      case 55302:
+        return 'Concerto';
+
+      default:
+        return null;
+    }
+  }
+
   void addDamage(
     Int64 attackerUid,
     Int64 targetUid,
@@ -194,6 +316,12 @@ def main() -> None:
     bool isCrit = false,
   }) {
     _onAction();
+
+    final detectedSubProfession =
+        _liteSubProfessionFromSkillId(skillId);
+    if (detectedSubProfession != null) {
+      _liteSubProfessionNames[attackerUid] = detectedSubProfession;
+    }
 
     final attackerData = getOrCreateDpsData(attackerUid);
     attackerData.startLoggedTick ??= tick;
@@ -305,18 +433,28 @@ def main() -> None:
         return 'Stormblade';
       case 2:
         return 'Frost Mage';
+      case 3:
+        return 'Twin Striker';
       case 4:
         return 'Wind Knight';
       case 5:
         return 'Verdant Oracle';
+      case 8:
+        return 'Dorothy';
       case 9:
         return 'Heavy Guardian';
+      case 10:
+        return 'Dark Spirit Dance Ritual Blade';
       case 11:
         return 'Marksman';
       case 12:
         return 'Shield Knight';
       case 13:
-        return 'Soul Musician';
+        return 'Beat Performer';
+      case 14:
+        return 'Lucy';
+      case 15:
+        return 'Natsu';
       default:
         return 'Unknown';
     }
@@ -336,9 +474,11 @@ def main() -> None:
           return <String, dynamic>{
             'uid': uid.toString(),
             'name': info?.name ?? 'Unknown',
-            'className': _liteClassName(info?.professionId),
+            'className':
+                storage.getLiteSubProfessionName(uid) ??
+                    _liteClassName(info?.professionId),
             'combatPower': info?.combatPower ?? 0,
-            'seasonStrength': info?.seasonStrength ?? 0,
+            'illusionBreakingStrength': info?.seasonStrength ?? 0,
             'isMe': uid == storage.currentPlayerUuid,
             'dps': dpsData.simpleDps,
             'total': dpsData.totalAttackDamage.toInt(),
@@ -403,7 +543,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.7.0+10",
+        "version: 1.8.0+11",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")
