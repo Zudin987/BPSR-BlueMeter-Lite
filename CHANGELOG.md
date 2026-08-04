@@ -4,6 +4,17 @@ All notable user-facing changes to BlueMeter Lite are documented here.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-04
+
+### Fixed
+
+- Read scene changes from small current-player transition packets
+- Preserve dungeon `lineId = 0`
+- Detect entering and leaving dungeons
+- Reset on map, line, and channel changes
+- Save scene history before replacing the old scene IDs
+
+
 No routine feature development is planned.
 
 ## [1.3.0] - TBD

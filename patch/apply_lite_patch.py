@@ -64,8 +64,8 @@ def main() -> None:
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
 
-    lite_version_name = "1.3.0"
-    lite_version_code = 20
+    lite_version_name = "1.3.1"
+    lite_version_code = 21
 
     upstream_commit_file = upstream / "UPSTREAM_COMMIT.txt"
     if upstream_commit_file.exists():
@@ -103,6 +103,10 @@ def main() -> None:
         upstream
         / "lib/core/analyze/processors/sync_near_entities_processor.dart"
     )
+    sync_container_data_processor = (
+        upstream
+        / "lib/core/analyze/processors/sync_container_data_processor.dart"
+    )
     encounter_history_service = (
         upstream
         / "lib/core/services/encounter_history_service.dart"
@@ -125,6 +129,7 @@ def main() -> None:
         dps_data,
         attr_type,
         sync_near_entities_processor,
+        sync_container_data_processor,
         icon_patch_root,
     ):
         if not required.exists():
@@ -391,6 +396,53 @@ def main() -> None:
         "initial nearby-player Season 3 strength cases",
     )
     sync_near_entities_processor.write_text(near_text, encoding="utf-8")
+
+    container_text = sync_container_data_processor.read_text(
+        encoding="utf-8"
+    )
+    container_text = replace_once(
+        container_text,
+        """      // SceneData → lineId, mapId, channelId
+          // ONLY process SceneData from the PLAYER's own SyncContainerData.
+          // Other entities (NPCs, companions, etc.) also have SceneData but with
+          // different values that would corrupt our scene tracking.
+          // Since we only set currentPlayerUuid from full player data, this check is reliable.
+          if (vData.hasSceneData() && isFullPlayerData) {
+            final scene = vData.sceneData;
+            _storage.onSceneUpdate(
+              lineId: scene.lineId > 0 ? scene.lineId : null,
+              mapId: scene.mapId > 0 ? scene.mapId : null,
+              channelId: scene.channelId > 0 ? scene.channelId : null,
+            );
+          } else if (vData.hasSceneData()) {
+            // Non-player SceneData — ignore silently
+          } else {
+            // SceneData absent is normal for other entities (NPCs, etc.) — do NOT clear monsters.
+            // Only onSceneUpdate (real line/map change) should clear.
+          }""",
+        """      // SceneData can arrive in either the large full-player packet or a
+          // smaller packet for the already-known current player during transitions.
+          // Continue ignoring scene data belonging to NPCs and other characters.
+          final isCurrentPlayerScene =
+              isFullPlayerData ||
+              playerUid == _storage.currentPlayerUuid;
+
+          if (vData.hasSceneData() && isCurrentPlayerScene) {
+            final scene = vData.sceneData;
+            _storage.onSceneUpdate(
+              // lineId == 0 is meaningful for an instanced/dungeon scene.
+              lineId: scene.lineId,
+              mapId: scene.mapId,
+              channelId: scene.channelId,
+            );
+          }""",
+        "current-player scene packet handling",
+    )
+    sync_container_data_processor.write_text(
+        container_text,
+        encoding="utf-8",
+    )
+
 
     dps_text = dps_data.read_text(encoding="utf-8")
 
@@ -1039,41 +1091,42 @@ void onSceneUpdate({
   final oldMapId = _mapId;
   final oldChannelId = _channelId;
 
-  final lineChanged =
-      lineId != null &&
-      lineId > 0 &&
-      oldLineId > 0 &&
-      oldLineId != lineId;
-  final mapChanged =
-      mapId != null &&
-      mapId > 0 &&
-      oldMapId > 0 &&
-      oldMapId != mapId;
-  final channelChanged =
-      channelId != null &&
-      channelId > 0 &&
-      oldChannelId > 0 &&
-      oldChannelId != channelId;
+  final receivedLineId = lineId != null;
+  final receivedMapId = mapId != null && mapId > 0;
+  final receivedChannelId =
+      channelId != null && channelId > 0;
+
   final dungeonEntry =
-      (lineId == null || lineId == 0) &&
+      receivedLineId &&
+      lineId == 0 &&
       oldLineId > 0;
 
-  if (mapId != null && mapId > 0) {
-    _mapId = mapId;
-  }
-  if (channelId != null && channelId > 0) {
-    _channelId = channelId;
-  }
-  if (lineId != null && lineId > 0) {
-    _lineId = lineId;
-  }
-  if (dungeonEntry) {
-    _lineId = 0;
-  }
+  final dungeonExit =
+      receivedLineId &&
+      lineId! > 0 &&
+      oldLineId == 0;
+
+  final lineChanged =
+      receivedLineId &&
+      oldLineId != lineId &&
+      !dungeonEntry &&
+      !dungeonExit;
+
+  final mapChanged =
+      receivedMapId &&
+      oldMapId > 0 &&
+      oldMapId != mapId;
+
+  final channelChanged =
+      receivedChannelId &&
+      oldChannelId > 0 &&
+      oldChannelId != channelId;
 
   String? splitReason;
   if (dungeonEntry) {
     splitReason = 'new_dungeon';
+  } else if (dungeonExit) {
+    splitReason = 'map_change';
   } else if (mapChanged) {
     splitReason = 'map_change';
   } else if (channelChanged) {
@@ -1082,15 +1135,27 @@ void onSceneUpdate({
     splitReason = 'line_change';
   }
 
-  if (splitReason == null) return;
-
-  if (!_liteAutoResetLocked) {
+  // Save/reset before replacing IDs, so history keeps the old scene.
+  if (splitReason != null && !_liteAutoResetLocked) {
     _liteRequestAutoSplit(splitReason);
     _playerInfoDatas.removeWhere(
       (uid, _) => uid != _currentPlayerUuid,
     );
   }
 
+  if (receivedMapId) {
+    _mapId = mapId!;
+  }
+  if (receivedChannelId) {
+    _channelId = channelId!;
+  }
+  if (receivedLineId) {
+    _lineId = lineId!;
+  }
+
+  if (splitReason == null) return;
+
+  // Refresh scene caches even while auto reset is locked.
   _monsterInfoDatas.clear();
   _deadMonsters.clear();
   _liteResetDetectionState();
