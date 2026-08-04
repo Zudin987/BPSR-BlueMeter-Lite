@@ -1,50 +1,48 @@
-# BlueMeter Lite v0.8 update
+# BlueMeter Lite v0.9 — Remote Illusion-Breaking Strength fix
 
 Replace these GitHub files:
 
-1. `patch/overlay_widget_lite.dart`
-2. `patch/apply_lite_patch.py`
+1. `patch/apply_lite_patch.py`
+2. `patch/overlay_widget_lite.dart`
 
-## Remote Illusion-Breaking Strength
+The overlay file is unchanged from v0.8 and is included so the update is
+self-contained.
 
-The app cannot guarantee this value for every other player because the normal
-team-member packet provides Ability Score and profession but not Season 3
-Illusion-Breaking Strength.
+## Actual cause
 
-v0.8 therefore:
+ZDPS can show Illusion-Breaking Strength for random nearby players because it
+processes the attribute collection for nearby entities, not only party data.
 
-- shows `(AbilityScore+Strength)` when a real strength value exists
-- shows only `(AbilityScore)` when remote strength is unavailable
-- no longer displays misleading `+—`
-- caches the last non-zero value per player for the current app session if the
-  game sends it temporarily
+BlueMeter has two relevant paths:
 
-The app does not guess or derive another player's strength.
+1. `SyncNearEntities` for the initial player appearance
+2. `SyncNearDeltaInfo` for later incremental updates
 
-## Vertical alignment
+The later delta path already handles:
 
-Every element inside a DPS row now has explicit middle alignment:
+- `AttrSeasonStrength`
+- `AttrSeasonStrengthTotal`
 
-- rank
-- player identity
-- total damage and DPS
-- contribution percentage
+The initial appearance path handled name, profession, Ability Score and other
+stats, but skipped both Season Strength values. Remote players therefore often
+remained at zero unless a later delta resent the attribute.
 
-The rows use centered `Align` widgets, centered Row cross-axis alignment,
-forced strut height, and controlled text-height behaviour.
+v0.9 adds both Season Strength cases to the initial nearby-player parser.
 
-## Compact size
+## Season 3 IDs
 
-Compact mode now switches to:
+- `11440` — Illusion-Breaking Strength
+- `11441` — Illusion-Breaking Strength total
 
-`180 × 80`
+## Existing behaviour retained
 
-Its manual minimum height is also 80 px.
-
-Expanded mode remains:
-
-`360 × 180`
+- Compact mode `180 × 80`
+- Expanded mode `360 × 180`
+- vertically centered rows
+- one-column scrolling
+- session cache for the last non-zero strength value
+- Ability Score-only fallback when a specific packet genuinely lacks strength
 
 ## Version
 
-`1.9.0+12`
+`1.10.0+13`

@@ -52,6 +52,10 @@ def main() -> None:
     app_gradle = upstream / "android/app/build.gradle.kts"
     data_storage = upstream / "lib/core/state/data_storage.dart"
     attr_type = upstream / "lib/core/models/attr_type.dart"
+    sync_near_entities_processor = (
+        upstream
+        / "lib/core/analyze/processors/sync_near_entities_processor.dart"
+    )
     icon_patch_root = patch_dir / "android_icons"
 
     for required in (
@@ -63,6 +67,7 @@ def main() -> None:
         app_gradle,
         data_storage,
         attr_type,
+        sync_near_entities_processor,
         icon_patch_root,
     ):
         if not required.exists():
@@ -187,6 +192,31 @@ def main() -> None:
         "Season 3 Illusion-Breaking Strength total attribute",
     )
     attr_type.write_text(attr_text, encoding="utf-8")
+
+    # Remote-player Season 3 fix:
+    # BlueMeter already handles Season Strength in later delta packets, but
+    # its initial SyncNearEntities appearance path ignores that attribute.
+    near_text = sync_near_entities_processor.read_text(encoding="utf-8")
+    near_text = replace_once(
+        near_text,
+        """      case AttrType.attrFightPoint:
+        _storage.setPlayerCombatPower(playerUid, reader.readInt32());
+        break;
+
+      case AttrType.attrLevel:""",
+        """      case AttrType.attrFightPoint:
+        _storage.setPlayerCombatPower(playerUid, reader.readInt32());
+        break;
+
+      case AttrType.attrSeasonStrength:
+      case AttrType.attrSeasonStrengthTotal:
+        _storage.setPlayerSeasonStrength(playerUid, reader.readInt32());
+        break;
+
+      case AttrType.attrLevel:""",
+        "initial nearby-player Season 3 strength cases",
+    )
+    sync_near_entities_processor.write_text(near_text, encoding="utf-8")
 
     # Keep only the counters required for a DPS ranking. This avoids per-hit
     # skill, target, timeline, healing, and damage-taken allocations.
@@ -555,7 +585,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.9.0+12",
+        "version: 1.10.0+13",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")
