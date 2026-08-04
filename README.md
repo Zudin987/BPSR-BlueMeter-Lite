@@ -1,106 +1,153 @@
-# BPSR BlueMeter Lite
+<div align="center">
 
-A lightweight Android-only DPS overlay for **Blue Protocol: Star Resonance**.
+# BlueMeter Lite
 
-This kit applies a small, focused fork on top of
-[`jbourny/bluemetermobile`](https://github.com/jbourny/bluemetermobile), then
-builds an APK through GitHub Actions.
+**A lightweight Android DPS overlay for Blue Protocol: Star Resonance.**
 
-## Lite design
+No PC required. Runs directly on your Android device.
 
-Included:
+[![Build](https://github.com/Zudin987/BPSR-BlueMeter-Lite/actions/workflows/build-apk.yml/badge.svg)](https://github.com/Zudin987/BPSR-BlueMeter-Lite/actions/workflows/build-apk.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Android-green.svg)
 
-- Live DPS ranking
-- Player name
-- Encounter timer
-- Manual reset button
-- Adaptive and manually resizable overlay
-- Local Android VPN capture
-- No PC required
+[**Download the latest APK**](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest)
 
-Removed from the active UI/data bridge:
+</div>
 
-- Boss timer/BPTimer reporting
-- Nearby monster radar
-- Hunt tools
-- Skill breakdown
-- Target breakdown
-- Timeline graph
-- Player detail screen
-- Heal/taken tabs
-- Overlay themes and detailed configuration panels
-- Monster and position serialization
+## Screenshots
 
-Low-resource changes:
+### Compact mode
 
-- Overlay updates once per second instead of twice per second
-- Only six small fields are sent to the overlay per player
-- Up to 20 damage dealers are shown, with automatic party/raid layouts
-- No monster, skill, timeline or position data is copied to the overlay isolate
-- DPS storage no longer allocates skill, per-target, timeline, healing or damage-taken records
-- TCP writes use a pending-write queue instead of assuming a non-blocking
-  socket writes the full payload in one call
-- TCP_NODELAY is enabled on game sockets
-- Kotlin-to-Flutter packet flushing is reduced to once per second
+Compact mode keeps the ranking, player name, total damage, DPS and contribution percentage in a small window.
 
-Supported Android game packages:
+<img src="docs/screenshots/bluemeter-lite-compact.png" alt="BlueMeter Lite compact overlay" width="520">
 
-- `sea.haoplay.game.gp.bpsr` — HaoPlay SEA
-- `com.bpsr.apj` — A Plus Japan/global
-- `tw.haoplay.game.gp.xhgm` — Taiwan/Hong Kong/Macau
-- `asia.xdg.game.gp.bpsr` — X.D. regional client
+### Expanded mode
 
-## Build the APK with GitHub
+Expanded mode adds the detected specialization, Ability Score and Illusion-Breaking Strength.
 
-1. Create a new empty public GitHub repository.
-2. Upload the **contents** of this ZIP, including the `.github` folder.
-3. Open the repository's **Actions** tab.
-4. Choose **Build BlueMeter Lite APK**.
-5. Click **Run workflow**.
-6. After the build completes, open it and download:
-   `bluemeter-lite-apk`.
-7. Install the `arm64-v8a` APK on a modern Android phone.
+<img src="docs/screenshots/bluemeter-lite-expanded.png" alt="BlueMeter Lite expanded overlay" width="760">
 
-The workflow clones the current upstream BlueMeter source, applies this Lite
-patch, builds release APKs, and uploads them as an artifact.
+## Features
 
-## Use
+- Live ranking by total damage
+- Current DPS shown beside total damage
+- Group damage contribution percentage
+- Compact and Expanded overlay modes
+- Detected profession or specialization
+- Ability Score and Illusion-Breaking Strength
+- Gold star and highlight for the local player
+- One-column list with vertical scrolling
+- Movable and manually resizable overlay
+- Manual encounter reset
+- Up to 20 displayed damage dealers
+- Android-only local capture with no PC relay
 
-1. Install the APK.
-2. Open **BlueMeter Lite**.
-3. Grant **Display over other apps**.
-4. Tap **Start DPS Meter**.
-5. Approve the Android VPN request.
-6. Launch BPSR.
+BlueMeter Lite intentionally focuses on the live meter. It does not include skill breakdowns, timelines, encounter history, healing tabs, target analysis, radar or boss-timer tools.
 
-Android will show a VPN indicator and a persistent service notification while
-the meter is active. Only installed supported BPSR packages are added to the
-VPN allow-list.
+## Download and install
 
-## Adaptive overlay
+1. Open the [latest GitHub release](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest).
+2. Download the APK marked **arm64-v8a**. This is the correct build for most modern Android phones.
+3. Install the APK.
+4. Open **BlueMeter Lite**.
+5. Grant **Display over other apps** permission.
+6. Tap **Start DPS Meter** and approve Android's VPN request.
+7. Launch BPSR and enter combat.
 
-- Auto mode sizes the window for solo, 5-player, 10-player, and 20-player use.
-- Wide raid mode splits up to 20 players into two columns.
-- The header can move the window and the bottom-right handle can resize it.
-- Text and row density adapt to the actual window dimensions.
-- The local player is highlighted and remains visible if outside the top 20.
+Android displays a VPN indicator and a foreground-service notification while the meter is active.
 
-## Ping expectations
+## Overlay controls
 
-The queued socket writer fixes a clear weakness in the upstream proxy:
-`SocketChannel.write()` is non-blocking and may write only part of a buffer.
-The upstream implementation acknowledged the whole game packet after one write
-attempt. Lite queues unsent bytes and finishes them on `OP_WRITE`.
+| Control | Action |
+|---|---|
+| `C` | Switch to Compact mode at `180 × 80` |
+| `E` | Switch to Expanded mode at `360 × 180` |
+| Header drag | Move the overlay |
+| Bottom-right handle | Resize the overlay |
+| Reset icon | Reset the current encounter |
 
-This should reduce avoidable stalls and packet loss, but a local Android
-`VpnService` still forwards game traffic in userspace. **Zero additional ping
-cannot be guaranteed.** Test normal ping and Lite ping in the same location.
+The player list always stays in one column. Resize the window vertically and scroll when more rows are available.
 
-## Important
+## Display format
 
-- This is an experimental community tool.
-- It has not been built or tested on a physical phone in this environment.
-- Keep the original upstream attribution and AGPL license.
-- Publishing a modified APK requires making the corresponding source available
-  under AGPL-3.0.
-- Game policies and enforcement can change.
+Compact:
+
+```text
+01. ★ MrHard                         2.8M (79.9K)   23%
+```
+
+Expanded:
+
+```text
+01. ★ MrHard — Frostbeam (49632+2250)   2.8M (77.8K)   19%
+```
+
+The values in parentheses after a player name are:
+
+```text
+Ability Score + Illusion-Breaking Strength
+```
+
+The values after total damage are:
+
+```text
+Total Damage (DPS)
+```
+
+## Supported Android clients
+
+| Region/client | Android package |
+|---|---|
+| HaoPlay SEA | `sea.haoplay.game.gp.bpsr` |
+| A Plus Japan / Global | `com.bpsr.apj` |
+| Taiwan / Hong Kong / Macau | `tw.haoplay.game.gp.xhgm` |
+| X.D. regional client | `asia.xdg.game.gp.bpsr` |
+
+Only installed supported BPSR packages are added to the Android VPN allow-list.
+
+## Privacy and network behaviour
+
+BlueMeter Lite processes supported BPSR traffic locally on the phone and forwards it to the game's original destination. The project does not operate a relay server and does not require an account.
+
+BlueMeter Lite does not add advertising, analytics or cloud synchronization. See [PRIVACY.md](PRIVACY.md) for details.
+
+## Troubleshooting
+
+### The game has no internet after starting the meter
+
+Stop BlueMeter Lite, reopen it and start the meter again. Also confirm that your installed BPSR client is listed under [Supported Android clients](#supported-android-clients).
+
+### A player's class or scores are missing
+
+Some information appears only after the relevant player or combat packet is received. Enter combat or wait until the player uses a specialization-specific skill.
+
+### The APK will not install over an older build
+
+Uninstall the older beta build, then install the new APK. Stable release signing should prevent this after the official 1.0 release.
+
+### The overlay is too small
+
+Switch modes with `C` or `E`, then use the bottom-right resize handle.
+
+For unresolved problems, open a [bug report](https://github.com/Zudin987/BPSR-BlueMeter-Lite/issues/new/choose).
+
+## Building from source
+
+This repository is a reproducible patch kit based on BlueMeter Mobile. The build workflow clones the upstream source, records its revision, applies the Lite patch and builds split Android APKs.
+
+See [BUILDING.md](BUILDING.md) for GitHub Actions and local build instructions.
+
+## Credits
+
+- [BlueMeter Mobile](https://github.com/jbourny/bluemetermobile) by jbourny and contributors — upstream Android meter
+- [BPSR-ZDPS](https://github.com/Blue-Protocol-Source/BPSR-ZDPS) — protocol, profession and attribute reference
+- Blue Protocol: Star Resonance and related names belong to their respective owners
+
+This is an unofficial community project and is not affiliated with Bandai Namco, HaoPlay, A Plus Japan, X.D. Global, Bokura or the official game developers and publishers.
+
+## License
+
+BlueMeter Lite is distributed under the [GNU Affero General Public License v3.0](LICENSE).
+
+Modified APK distributions must make their complete corresponding source available, including the Lite patch and the upstream revision used for the build. See [LICENSE-NOTICE.md](LICENSE-NOTICE.md).
