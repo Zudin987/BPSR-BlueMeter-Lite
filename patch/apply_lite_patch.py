@@ -41,8 +41,8 @@ def main() -> None:
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
 
-    lite_version_name = "1.1.0"
-    lite_version_code = 18
+    lite_version_name = "1.2.0"
+    lite_version_code = 19
 
     upstream_commit_file = upstream / "UPSTREAM_COMMIT.txt"
     if upstream_commit_file.exists():
@@ -74,6 +74,7 @@ def main() -> None:
     manifest = upstream / "android/app/src/main/AndroidManifest.xml"
     app_gradle = upstream / "android/app/build.gradle.kts"
     data_storage = upstream / "lib/core/state/data_storage.dart"
+    dps_data = upstream / "lib/core/models/dps_data.dart"
     attr_type = upstream / "lib/core/models/attr_type.dart"
     sync_near_entities_processor = (
         upstream
@@ -90,6 +91,7 @@ def main() -> None:
         manifest,
         app_gradle,
         data_storage,
+        dps_data,
         attr_type,
         sync_near_entities_processor,
         icon_patch_root,
@@ -351,8 +353,65 @@ def main() -> None:
     )
     sync_near_entities_processor.write_text(near_text, encoding="utf-8")
 
-    # Keep only the counters required for a DPS ranking. This avoids per-hit
-    # skill, target, timeline, healing, and damage-taken allocations.
+    dps_text = dps_data.read_text(encoding="utf-8")
+    dps_text = replace_once(
+        dps_text,
+        """  int activeCombatTicks = 0;
+
+  Int64 totalAttackDamage = Int64.ZERO;""",
+        """  int activeCombatTicks = 0;
+
+  // BlueMeter Lite keeps separate clocks for each live meter so Healing or
+  // Tanking activity never changes a player's DPS denominator.
+  int? liteDamageStartTick;
+  int liteDamageLastTick = 0;
+  int? liteHealingStartTick;
+  int liteHealingLastTick = 0;
+  int? liteTakenStartTick;
+  int liteTakenLastTick = 0;
+
+  Int64 totalAttackDamage = Int64.ZERO;""",
+        "Lite metric clocks",
+    )
+    dps_text = replace_once(
+        dps_text,
+        """  double get simpleTakenDps {
+    if (startLoggedTick == null) return 0.0;
+    double seconds = (lastLoggedTick - startLoggedTick!) / 1000.0;
+    if (seconds < 1.0) seconds = 1.0;
+    return totalTakenDamage.toDouble() / seconds;
+  }
+}""",
+        """  double get simpleTakenDps {
+    if (startLoggedTick == null) return 0.0;
+    double seconds = (lastLoggedTick - startLoggedTick!) / 1000.0;
+    if (seconds < 1.0) seconds = 1.0;
+    return totalTakenDamage.toDouble() / seconds;
+  }
+
+  double _liteRate(Int64 total, int? startTick, int lastTick) {
+    if (startTick == null || total.toInt() <= 0) return 0.0;
+    double seconds = (lastTick - startTick) / 1000.0;
+    if (seconds < 1.0) seconds = 1.0;
+    return total.toDouble() / seconds;
+  }
+
+  double get liteDps =>
+      _liteRate(totalAttackDamage, liteDamageStartTick, liteDamageLastTick);
+
+  double get liteHps =>
+      _liteRate(totalHeal, liteHealingStartTick, liteHealingLastTick);
+
+  double get liteTakenDps =>
+      _liteRate(totalTakenDamage, liteTakenStartTick, liteTakenLastTick);
+}""",
+        "Lite metric rate getters",
+    )
+    dps_data.write_text(dps_text, encoding="utf-8")
+
+    # Keep only lightweight live totals for Damage, Healing, and Tanking.
+    # Skill, target, timeline, overheal, mitigation, and death breakdowns stay
+    # disabled to preserve the Lite app's low memory and CPU overhead.
     storage_text = data_storage.read_text(encoding="utf-8")
     damage_start = storage_text.find("  void addDamage(")
     healing_start = storage_text.find("  void addHealing(")
@@ -469,6 +528,17 @@ def main() -> None:
     }
   }
 
+  void _liteDetectSubProfession(
+    Int64 uid,
+    String? skillId,
+  ) {
+    final detectedSubProfession =
+        _liteSubProfessionFromSkillId(skillId);
+    if (detectedSubProfession != null) {
+      _liteSubProfessionNames[uid] = detectedSubProfession;
+    }
+  }
+
   void addDamage(
     Int64 attackerUid,
     Int64 targetUid,
@@ -479,22 +549,20 @@ def main() -> None:
     bool isCrit = false,
   }) {
     _onAction();
+    _liteDetectSubProfession(attackerUid, skillId);
 
-    final detectedSubProfession =
-        _liteSubProfessionFromSkillId(skillId);
-    if (detectedSubProfession != null) {
-      _liteSubProfessionNames[attackerUid] = detectedSubProfession;
-    }
-
+    // Damage output.
     final attackerData = getOrCreateDpsData(attackerUid);
-    attackerData.startLoggedTick ??= tick;
-    attackerData.lastLoggedTick = tick;
     attackerData.totalAttackDamage += damage;
+    attackerData.liteDamageStartTick ??= tick;
+    attackerData.liteDamageLastTick = tick;
 
-    if (attackerData.startLoggedTick != null) {
-      attackerData.activeCombatTicks =
-          tick - attackerData.startLoggedTick!;
-    }
+    // Damage received. NPC entries can exist internally, but the Lite bridge
+    // only sends entities that have PlayerInfo to the Android overlay.
+    final targetData = getOrCreateDpsData(targetUid);
+    targetData.totalTakenDamage += damage;
+    targetData.liteTakenStartTick ??= tick;
+    targetData.liteTakenLastTick = tick;
 
     _scheduleNotify();
   }
@@ -507,7 +575,16 @@ def main() -> None:
     String? skillId,
     bool isCrit = false,
   }) {
-    // BlueMeter Lite intentionally does not collect healing details.
+    _onAction();
+    _liteDetectSubProfession(healerUid, skillId);
+
+    // Totals only: no skill, target, timeline, overheal, or crit breakdown.
+    final healerData = getOrCreateDpsData(healerUid);
+    healerData.totalHeal += healAmount;
+    healerData.liteHealingStartTick ??= tick;
+    healerData.liteHealingLastTick = tick;
+
+    _scheduleNotify();
   }
 
 """
@@ -604,7 +681,7 @@ def main() -> None:
     )
     dart = dart.replace(
         "// Update overlay at 2 FPS (500ms) to prevent log spam and UI overload",
-        "// Lite: update the adaptive DPS overlay once per second",
+        "// Lite: update the Damage, Healing, or Tanking overlay once per second",
     )
 
     data_block_start = dart.find(
@@ -661,14 +738,21 @@ def main() -> None:
     storage.checkTimeout();
 
     final players = storage.fullDpsDatas.entries
-        .where((entry) => entry.value.totalAttackDamage.toInt() > 0)
+        .where((entry) {
+          final data = entry.value;
+          final hasMetric =
+              data.totalAttackDamage.toInt() > 0 ||
+              data.totalHeal.toInt() > 0 ||
+              data.totalTakenDamage.toInt() > 0;
+          return hasMetric && storage.getPlayerInfoSync(entry.key) != null;
+        })
         .map((entry) {
           final uid = entry.key;
           final uidText = uid.toString();
           final dpsData = entry.value;
-          final info = storage.getPlayerInfoSync(uid);
+          final info = storage.getPlayerInfoSync(uid)!;
 
-          final liveSeasonStrength = info?.seasonStrength ?? 0;
+          final liveSeasonStrength = info.seasonStrength ?? 0;
           if (liveSeasonStrength > 0) {
             _liteSeasonStrengthCache[uidText] = liveSeasonStrength;
           }
@@ -679,15 +763,19 @@ def main() -> None:
 
           return <String, dynamic>{
             'uid': uidText,
-            'name': info?.name ?? 'Unknown',
+            'name': info.name ?? 'Unknown',
             'className':
                 storage.getLiteSubProfessionName(uid) ??
-                    _liteClassName(info?.professionId),
-            'combatPower': info?.combatPower ?? 0,
+                    _liteClassName(info.professionId),
+            'combatPower': info.combatPower ?? 0,
             'illusionBreakingStrength': displayedSeasonStrength,
             'isMe': uid == storage.currentPlayerUuid,
-            'dps': dpsData.simpleDps,
-            'total': dpsData.totalAttackDamage.toInt(),
+            'totalDamage': dpsData.totalAttackDamage.toInt(),
+            'dps': dpsData.liteDps,
+            'totalHealing': dpsData.totalHeal.toInt(),
+            'hps': dpsData.liteHps,
+            'totalTaken': dpsData.totalTakenDamage.toInt(),
+            'takenDps': dpsData.liteTakenDps,
           };
         })
         .toList(growable: false);

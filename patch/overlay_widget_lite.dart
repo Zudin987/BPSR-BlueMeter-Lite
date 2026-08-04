@@ -3,6 +3,12 @@ enum _LiteViewMode {
   expanded,
 }
 
+enum _LiteMeterType {
+  damage,
+  healing,
+  tanking,
+}
+
 class OverlayWidget extends StatefulWidget {
   const OverlayWidget({super.key});
 
@@ -25,11 +31,13 @@ class _OverlayWidgetState extends State<OverlayWidget> {
   static const String _prefX = 'lite_overlay_x';
   static const String _prefY = 'lite_overlay_y';
   static const String _prefLocked = 'lite_overlay_locked';
+  static const String _prefMeterType = 'lite_overlay_meter_type';
 
   List<Map<String, dynamic>> _players = const [];
   int _combatTime = 0;
   StreamSubscription? _overlaySubscription;
   _LiteViewMode _viewMode = _LiteViewMode.expanded;
+  _LiteMeterType _meterType = _LiteMeterType.damage;
   bool _isLocked = false;
   int _lastResizeRequestMs = 0;
 
@@ -109,12 +117,19 @@ Future<void> _restoreLayout() async {
     final y = (prefs.getDouble(_prefY) ?? 80.0)
         .clamp(0.0, 10000.0)
         .toDouble();
+    final savedMeterType = prefs.getString(_prefMeterType);
+    final meterType = switch (savedMeterType) {
+      'healing' => _LiteMeterType.healing,
+      'tanking' => _LiteMeterType.tanking,
+      _ => _LiteMeterType.damage,
+    };
     final locked = prefs.getBool(_prefLocked) ?? false;
 
     if (!mounted) return;
 
     setState(() {
       _viewMode = mode;
+      _meterType = meterType;
       _isLocked = locked;
       _windowX = x;
       _windowY = y;
@@ -147,76 +162,146 @@ Future<void> _saveLayout() async {
     await prefs.setDouble(_prefX, _windowX);
     await prefs.setDouble(_prefY, _windowY);
     await prefs.setBool(_prefLocked, _isLocked);
+    await prefs.setString(
+      _prefMeterType,
+      switch (_meterType) {
+        _LiteMeterType.damage => 'damage',
+        _LiteMeterType.healing => 'healing',
+        _LiteMeterType.tanking => 'tanking',
+      },
+    );
   } catch (_) {
     // Persistence failure must never interrupt the live meter.
   }
 }
 
-  int get _activePlayerCount {
-    return _players
-        .where((player) => ((player['total'] as num?) ?? 0) > 0)
-        .length;
+
+String get _metricTotalKey {
+  return switch (_meterType) {
+    _LiteMeterType.damage => 'totalDamage',
+    _LiteMeterType.healing => 'totalHealing',
+    _LiteMeterType.tanking => 'totalTaken',
+  };
+}
+
+String get _metricRateKey {
+  return switch (_meterType) {
+    _LiteMeterType.damage => 'dps',
+    _LiteMeterType.healing => 'hps',
+    _LiteMeterType.tanking => 'takenDps',
+  };
+}
+
+String get _meterTitle {
+  return switch (_meterType) {
+    _LiteMeterType.damage => 'DPS',
+    _LiteMeterType.healing => 'Healing',
+    _LiteMeterType.tanking => 'Tanking',
+  };
+}
+
+String get _emptyMeterMessage {
+  return switch (_meterType) {
+    _LiteMeterType.damage => 'Waiting for damage…',
+    _LiteMeterType.healing => 'Waiting for healing…',
+    _LiteMeterType.tanking => 'Waiting for damage taken…',
+  };
+}
+
+Color get _meterAccentColor {
+  return switch (_meterType) {
+    _LiteMeterType.damage => const Color(0xFF82AEFF),
+    _LiteMeterType.healing => const Color(0xFF65D69B),
+    _LiteMeterType.tanking => const Color(0xFFFFA86A),
+  };
+}
+
+Color get _meterAccentSoftColor {
+  return switch (_meterType) {
+    _LiteMeterType.damage => const Color(0x243A86FF),
+    _LiteMeterType.healing => const Color(0x2445B978),
+    _LiteMeterType.tanking => const Color(0x24D87839),
+  };
+}
+
+double _playerMetricTotal(Map<String, dynamic> player) {
+  return ((player[_metricTotalKey] as num?) ?? 0).toDouble();
+}
+
+double _playerMetricRate(Map<String, dynamic> player) {
+  return ((player[_metricRateKey] as num?) ?? 0).toDouble();
+}
+
+int get _activePlayerCount {
+  return _players.where((player) => _playerMetricTotal(player) > 0).length;
+}
+
+Future<void> _setMeterType(_LiteMeterType meterType) async {
+  if (_meterType == meterType) return;
+
+  setState(() {
+    _meterType = meterType;
+  });
+
+  await _saveLayout();
+}
+
+String _formatNumber(num number) {
+  final value = number.toDouble().abs();
+
+  if (value >= 1000000000) {
+    final scaled = value / 1000000000;
+    return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}B';
   }
 
-  String _formatNumber(num number) {
-    final value = number.toDouble().abs();
-
-    if (value >= 1000000000) {
-      final scaled = value / 1000000000;
-      return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}B';
-    }
-
-    if (value >= 1000000) {
-      final scaled = value / 1000000;
-      return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}M';
-    }
-
-    if (value >= 1000) {
-      final scaled = value / 1000;
-      return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}K';
-    }
-
-    return value.toStringAsFixed(0);
+  if (value >= 1000000) {
+    final scaled = value / 1000000;
+    return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}M';
   }
 
-  String _formatTime(int seconds) {
-    final safeSeconds = seconds < 0 ? 0 : seconds;
-    final hours = safeSeconds ~/ 3600;
-    final minutes = (safeSeconds % 3600) ~/ 60;
-    final remainder = safeSeconds % 60;
+  if (value >= 1000) {
+    final scaled = value / 1000;
+    return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}K';
+  }
 
-    if (hours > 0) {
-      return '${hours.toString().padLeft(2, '0')}:'
-          '${minutes.toString().padLeft(2, '0')}:'
-          '${remainder.toString().padLeft(2, '0')}';
-    }
+  return value.toStringAsFixed(0);
+}
 
-    return '${minutes.toString().padLeft(2, '0')}:'
+String _formatTime(int seconds) {
+  final safeSeconds = seconds < 0 ? 0 : seconds;
+  final hours = safeSeconds ~/ 3600;
+  final minutes = (safeSeconds % 3600) ~/ 60;
+  final remainder = safeSeconds % 60;
+
+  if (hours > 0) {
+    return '${hours.toString().padLeft(2, '0')}:'
+        '${minutes.toString().padLeft(2, '0')}:'
         '${remainder.toString().padLeft(2, '0')}';
   }
 
-  void _resetEncounter() {
-    final sendPort =
-        IsolateNameServer.lookupPortByName('overlay_communication_port');
-    sendPort?.send('RESET');
-  }
+  return '${minutes.toString().padLeft(2, '0')}:'
+      '${remainder.toString().padLeft(2, '0')}';
+}
 
+void _resetEncounter() {
+  final sendPort =
+      IsolateNameServer.lookupPortByName('overlay_communication_port');
+  sendPort?.send('RESET');
+}
 
 List<Map<String, dynamic>> _rankPlayers() {
   final ranked = _players
-      .where((player) => ((player['total'] as num?) ?? 0) > 0)
+      .where((player) => _playerMetricTotal(player) > 0)
       .map((player) => Map<String, dynamic>.from(player))
       .toList(growable: true)
     ..sort((a, b) {
-      final aTotal = ((a['total'] as num?) ?? 0).toDouble();
-      final bTotal = ((b['total'] as num?) ?? 0).toDouble();
-      final totalComparison = bTotal.compareTo(aTotal);
+      final totalComparison =
+          _playerMetricTotal(b).compareTo(_playerMetricTotal(a));
       if (totalComparison != 0) return totalComparison;
 
-      final aDps = ((a['dps'] as num?) ?? 0).toDouble();
-      final bDps = ((b['dps'] as num?) ?? 0).toDouble();
-      final dpsComparison = bDps.compareTo(aDps);
-      if (dpsComparison != 0) return dpsComparison;
+      final rateComparison =
+          _playerMetricRate(b).compareTo(_playerMetricRate(a));
+      if (rateComparison != 0) return rateComparison;
 
       final aName = (a['name'] as String?) ?? '';
       final bName = (b['name'] as String?) ?? '';
@@ -391,130 +476,217 @@ Future<void> _toggleLock() async {
     );
   }
 
-  Widget _buildHeader({
-    required double headerHeight,
-    required double headerFontSize,
-    required int totalPlayers,
-  }) {
-    final playerLabel = totalPlayers > _maxDisplayedPlayers
-        ? '$_maxDisplayedPlayers+'
-        : '$totalPlayers';
 
-    return GestureDetector(
+Widget _buildMeterTab({
+  required String label,
+  required _LiteMeterType type,
+  required double height,
+  required double fontSize,
+}) {
+  final selected = _meterType == type;
+  final accent = switch (type) {
+    _LiteMeterType.damage => const Color(0xFF82AEFF),
+    _LiteMeterType.healing => const Color(0xFF65D69B),
+    _LiteMeterType.tanking => const Color(0xFFFFA86A),
+  };
+
+  return Expanded(
+    child: GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onPanStart: _isLocked ? null : (_) {},
-      onPanUpdate: _isLocked ? null : _moveWindow,
-      onPanEnd: _isLocked ? null : (_) => _saveLayout(),
+      onTap: () => _setMeterType(type),
       child: Container(
-        height: headerHeight,
-        padding: const EdgeInsets.only(left: 9, right: 3),
-        color: const Color(0xF01B1E24),
-        child: Row(
-          children: [
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'DPS',
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: const Color(0xFF82AEFF),
-                    fontWeight: FontWeight.w800,
-                    fontSize: headerFontSize,
-                    letterSpacing: 0.3,
-                  ),
+        height: height,
+        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+        decoration: BoxDecoration(
+          color: selected
+              ? accent.withValues(alpha: 0.34)
+              : const Color(0x1FFFFFFF),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: selected
+                ? accent.withValues(alpha: 0.80)
+                : const Color(0x18FFFFFF),
+            width: 0.7,
+          ),
+        ),
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                color: selected
+                    ? const Color(0xFFF4F7FF)
+                    : const Color(0xFFB9C0CC),
+                fontWeight:
+                    selected ? FontWeight.w800 : FontWeight.w600,
+                fontSize: fontSize,
+                height: 1,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildMeterTabs({
+  required double tabHeight,
+  required double tabFontSize,
+}) {
+  return Container(
+    height: tabHeight,
+    padding: const EdgeInsets.fromLTRB(3, 2, 3, 2),
+    color: const Color(0xE9181B20),
+    child: Row(
+      children: [
+        _buildMeterTab(
+          label: 'DPS',
+          type: _LiteMeterType.damage,
+          height: tabHeight - 4,
+          fontSize: tabFontSize,
+        ),
+        _buildMeterTab(
+          label: 'Healing',
+          type: _LiteMeterType.healing,
+          height: tabHeight - 4,
+          fontSize: tabFontSize,
+        ),
+        _buildMeterTab(
+          label: 'Tanking',
+          type: _LiteMeterType.tanking,
+          height: tabHeight - 4,
+          fontSize: tabFontSize,
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildHeader({
+  required double headerHeight,
+  required double headerFontSize,
+  required int totalPlayers,
+}) {
+  final playerLabel = totalPlayers > _maxDisplayedPlayers
+      ? '$_maxDisplayedPlayers+'
+      : '$totalPlayers';
+
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onPanStart: _isLocked ? null : (_) {},
+    onPanUpdate: _isLocked ? null : _moveWindow,
+    onPanEnd: _isLocked ? null : (_) => _saveLayout(),
+    child: Container(
+      height: headerHeight,
+      padding: const EdgeInsets.only(left: 9, right: 3),
+      color: const Color(0xF01B1E24),
+      child: Row(
+        children: [
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _meterTitle,
+                maxLines: 1,
+                style: TextStyle(
+                  color: _meterAccentColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: headerFontSize,
+                  letterSpacing: 0.3,
                 ),
               ),
             ),
-            const SizedBox(width: 6),
-            Container(
-              constraints: const BoxConstraints(minWidth: 22),
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            constraints: const BoxConstraints(minWidth: 22),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            decoration: BoxDecoration(
+              color: _meterAccentSoftColor,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(
+              playerLabel,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _meterAccentColor.withValues(alpha: 0.90),
+                fontWeight: FontWeight.w700,
+                fontSize: (headerFontSize - 2).clamp(9, 13).toDouble(),
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          const Spacer(),
+          Text(
+            _formatTime(_combatTime),
+            maxLines: 1,
+            style: TextStyle(
+              color: const Color(0xFFD3D8E3),
+              fontWeight: FontWeight.w600,
+              fontSize: (headerFontSize - 1).clamp(10, 14).toDouble(),
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(width: 4),
+          _buildHeaderButton(
+            onTap: _toggleViewMode,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 21),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0x243A86FF),
-                borderRadius: BorderRadius.circular(9),
+                color: _viewMode == _LiteViewMode.expanded
+                    ? const Color(0x423A86FF)
+                    : const Color(0x1FFFFFFF),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(
+                  color: _viewMode == _LiteViewMode.expanded
+                      ? const Color(0x88699DFF)
+                      : const Color(0x22FFFFFF),
+                  width: 0.7,
+                ),
               ),
               child: Text(
-                playerLabel,
+                _modeLabel(),
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: const Color(0xFFAEC8FF),
-                  fontWeight: FontWeight.w700,
-                  fontSize: (headerFontSize - 2).clamp(9, 13).toDouble(),
+                  color: const Color(0xFFDDE6F7),
+                  fontWeight: FontWeight.w800,
+                  fontSize: (headerFontSize - 2).clamp(9, 12).toDouble(),
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ),
-            const Spacer(),
-            Text(
-              _formatTime(_combatTime),
-              maxLines: 1,
-              style: TextStyle(
-                color: const Color(0xFFD3D8E3),
-                fontWeight: FontWeight.w600,
-                fontSize: (headerFontSize - 1).clamp(10, 14).toDouble(),
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+          ),
+          _buildHeaderButton(
+            onTap: _toggleLock,
+            size: 23,
+            child: Icon(
+              _isLocked
+                  ? Icons.lock_rounded
+                  : Icons.lock_open_rounded,
+              size: (headerHeight * 0.48).clamp(13, 18).toDouble(),
+              color: _isLocked
+                  ? const Color(0xFFFFD978)
+                  : const Color(0xFFAAB2C2),
             ),
-            const SizedBox(width: 4),
-            _buildHeaderButton(
-              onTap: _toggleViewMode,
-              child: Container(
-                constraints: const BoxConstraints(minWidth: 21),
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _viewMode == _LiteViewMode.expanded
-                      ? const Color(0x423A86FF)
-                      : const Color(0x1FFFFFFF),
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(
-                    color: _viewMode == _LiteViewMode.expanded
-                        ? const Color(0x88699DFF)
-                        : const Color(0x22FFFFFF),
-                    width: 0.7,
-                  ),
-                ),
-                child: Text(
-                  _modeLabel(),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: const Color(0xFFDDE6F7),
-                    fontWeight: FontWeight.w800,
-                    fontSize: (headerFontSize - 2).clamp(9, 12).toDouble(),
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ),
+          ),
+          _buildHeaderButton(
+            onTap: _resetEncounter,
+            child: Icon(
+              Icons.refresh_rounded,
+              size: (headerHeight * 0.52).clamp(14, 19).toDouble(),
+              color: const Color(0xFFAAB2C2),
             ),
-_buildHeaderButton(
-  onTap: _toggleLock,
-  size: 23,
-  child: Icon(
-    _isLocked
-        ? Icons.lock_rounded
-        : Icons.lock_open_rounded,
-    size: (headerHeight * 0.48).clamp(13, 18).toDouble(),
-    color: _isLocked
-        ? const Color(0xFFFFD978)
-        : const Color(0xFFAAB2C2),
-  ),
-),
-            _buildHeaderButton(
-              onTap: _resetEncounter,
-              child: Icon(
-                Icons.refresh_rounded,
-                size: (headerHeight * 0.52).clamp(14, 19).toDouble(),
-                color: const Color(0xFFAAB2C2),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
-
-
+    ),
+  );
+}
 
 Color _classColor(String className) {
   switch (className) {
@@ -625,8 +797,8 @@ Widget _buildPlayerRow({
   required double rowHeight,
   required double columnWidth,
 }) {
-  final total = ((player['total'] as num?) ?? 0).toDouble();
-  final dps = ((player['dps'] as num?) ?? 0).toDouble();
+  final total = _playerMetricTotal(player);
+  final rate = _playerMetricRate(player);
   final ratio = (total / maxTotal).clamp(0.0, 1.0).toDouble();
   final contribution = groupTotal > 0 ? (total / groupTotal * 100.0) : 0.0;
   final isMe = player['isMe'] == true;
@@ -807,7 +979,7 @@ Widget _buildPlayerRow({
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
                     child: Text(
-                      '${_formatNumber(total)} (${_formatNumber(dps)})',
+                      '${_formatNumber(total)} (${_formatNumber(rate)})',
                       maxLines: 1,
                       textAlign: TextAlign.right,
                       textHeightBehavior: const TextHeightBehavior(
@@ -908,7 +1080,7 @@ Widget _buildMeterBody({
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Text(
-          'Waiting for combat…',
+          _emptyMeterMessage,
           style: TextStyle(
             color: const Color(0xFF8B93A3),
             fontWeight: FontWeight.w500,
@@ -938,14 +1110,12 @@ Widget _buildMeterBody({
     );
     final maxTotal = ranked.isEmpty
         ? 1.0
-        : ((ranked.first['total'] as num?) ?? 1)
-            .toDouble()
+        : _playerMetricTotal(ranked.first)
             .clamp(1.0, double.infinity)
             .toDouble();
     final groupTotal = ranked.fold<double>(
       0.0,
-      (sum, player) =>
-          sum + ((player['total'] as num?) ?? 0).toDouble(),
+      (sum, player) => sum + _playerMetricTotal(player),
     );
 
     return Material(
@@ -962,6 +1132,10 @@ Widget _buildMeterBody({
               (height * 0.15).clamp(26.0, 33.0).toDouble();
           final headerFontSize =
               (headerHeight * 0.36).clamp(9.5, 12.5).toDouble();
+          final tabHeight =
+              (height * 0.10).clamp(16.0, 22.0).toDouble();
+          final tabFontSize =
+              (tabHeight * 0.46).clamp(7.0, 10.0).toDouble();
 
           return Container(
             decoration: BoxDecoration(
@@ -990,6 +1164,10 @@ Widget _buildMeterBody({
                       headerHeight: headerHeight,
                       headerFontSize: headerFontSize,
                       totalPlayers: ranked.length,
+                    ),
+                    _buildMeterTabs(
+                      tabHeight: tabHeight,
+                      tabFontSize: tabFontSize,
                     ),
                     Expanded(
                       child: LayoutBuilder(

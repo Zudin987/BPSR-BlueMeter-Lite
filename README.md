@@ -4,7 +4,7 @@
 
 **by MrEz**
 
-A lightweight Android DPS overlay for **Blue Protocol: Star Resonance**.
+A lightweight Android combat meter overlay for **Blue Protocol: Star Resonance**.
 
 No PC required. Runs directly on your Android device.
 
@@ -16,8 +16,8 @@ No PC required. Runs directly on your Android device.
 
 </div>
 
-> [!IMPORTANT]
-> **Upgrading from v1.0.0:** v1.1.0 is the first release signed with BlueMeter Lite's permanent key. Uninstall v1.0.0 once before installing v1.1.0. Releases after v1.1.0 can update normally as long as the same key is preserved.
+> [!NOTE]
+> Users still on v1.0.0 must uninstall it once before installing a permanently signed release. Users on v1.1.0 can update normally to v1.2.0.
 
 ## Screenshots
 
@@ -31,9 +31,10 @@ No PC required. Runs directly on your Android device.
 
 ## Features
 
-- Live ranking by total damage
-- Current DPS shown beside total damage
-- Group damage contribution percentage
+- Toggleable **DPS**, **Healing**, and **Tanking** meters
+- Damage: total damage, DPS, and group contribution percentage
+- Healing: total healing, HPS, and group contribution percentage
+- Tanking: total damage received, taken-per-second, and group contribution percentage
 - Compact and Expanded overlay modes
 - Detected profession or specialization
 - Ability Score and Illusion-Breaking Strength
@@ -47,10 +48,10 @@ No PC required. Runs directly on your Android device.
 - Portrait control app; the game overlay remains rotation-aware
 - About screen with privacy, license and exact upstream revision
 - Manual encounter reset
-- Up to 20 displayed damage dealers
+- Up to 20 displayed players per meter
 - Android-only local capture with no PC relay
 
-BlueMeter Lite intentionally focuses on the live meter. It does not include skill breakdowns, timelines, encounter history, healing tabs, target analysis, radar or boss-timer tools.
+BlueMeter Lite intentionally keeps these meters lightweight. It stores only live totals and per-second values; it does not include skill breakdowns, overheal, mitigation, deaths, timelines, encounter history, target analysis, radar or boss-timer tools.
 
 ## Download and install
 
@@ -68,6 +69,9 @@ Android displays a VPN indicator and a foreground-service notification while the
 
 | Control | Action |
 |---|---|
+| `DPS` | Rank players by total damage and DPS |
+| `Healing` | Rank players by total healing and HPS |
+| `Tanking` | Rank players by total damage received and taken-per-second |
 | `C` | Compact mode at `180 × 80` |
 | `E` | Expanded mode at `360 × 180` |
 | Header drag | Move the overlay while unlocked |
@@ -75,7 +79,7 @@ Android displays a VPN indicator and a foreground-service notification while the
 | Lock icon | Lock or unlock both moving and resizing |
 | Reset icon | Reset the current encounter |
 
-The selected mode, size, position and lock state are restored the next time the overlay starts.
+The selected meter tab, mode, size, position and lock state are restored the next time the overlay starts.
 
 ## Display format
 
@@ -97,10 +101,12 @@ The name-side values are:
 Ability Score + Illusion-Breaking Strength
 ```
 
-The damage-side values are:
+The right-side values follow the selected tab:
 
 ```text
-Total Damage (DPS)
+DPS:      Total Damage (DPS)
+Healing:  Total Healing (HPS)
+Tanking:  Total Damage Received (Taken Per Second)
 ```
 
 ## Supported Android clients

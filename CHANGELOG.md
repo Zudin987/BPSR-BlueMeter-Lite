@@ -6,6 +6,22 @@ All notable user-facing changes to BlueMeter Lite are documented here.
 
 No routine feature development is planned.
 
+## [1.2.0] - TBD
+
+### Added
+
+- Toggleable DPS, Healing and Tanking tabs
+- Total healing, HPS and healing contribution ranking
+- Total damage received, taken-per-second and tanking contribution ranking
+- Saved selected meter tab
+- Separate lightweight active-time clocks for damage, healing and damage received
+
+### Performance
+
+- Stores only totals and meter-specific timestamps
+- Does not restore heavy skill, target, timeline, overheal, mitigation or death tracking
+- Filters NPC-only entries from the player overlay
+
 ## [1.1.0] - 2026-08-04
 
 ### Added
