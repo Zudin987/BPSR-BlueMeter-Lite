@@ -2,192 +2,166 @@
 
 # BlueMeter Lite
 
-**by MrEz**
+**A lightweight Android combat meter for Blue Protocol: Star Resonance.**
 
-A lightweight Android combat meter overlay for **Blue Protocol: Star Resonance**.
-
-No PC required. Runs directly on your Android device.
-
-[![Build](https://github.com/Zudin987/BPSR-BlueMeter-Lite/actions/workflows/build-apk.yml/badge.svg)](https://github.com/Zudin987/BPSR-BlueMeter-Lite/actions/workflows/build-apk.yml)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-![Platform](https://img.shields.io/badge/platform-Android-green.svg)
+Shows **DPS, Healing and Tanking** directly above the game.  
+**No PC required.**
 
 [**Download the latest APK**](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest)
 
 </div>
 
 > [!NOTE]
-> Users still on v1.0.0 must uninstall it once before installing a permanently signed release. Users on v1.1.0 or v1.2.0 can update normally to v1.3.0.
+> Android shows a VPN icon while the meter is running. BlueMeter Lite uses a local VPN to read supported BPSR traffic on your phone. It does not send your combat data to a BlueMeter server.
 
-## Screenshots
+## Quick start
 
-### Compact mode
+1. Download the latest APK. Most modern phones should use **arm64-v8a**.
+2. Install and open **BlueMeter Lite**.
+3. Tap **Start DPS Meter**.
+4. Allow **Display over other apps**.
+5. Approve Android's VPN request.
+6. Open BPSR and start fighting.
 
-<img src="docs/screenshots/bluemeter-lite-compact.png" alt="BlueMeter Lite compact overlay" width="520">
+## What the overlay buttons do
 
-### Expanded mode
+<img src="docs/overlay-controls-guide.svg" alt="BlueMeter Lite overlay button guide" width="900">
 
-<img src="docs/screenshots/bluemeter-lite-expanded.png" alt="BlueMeter Lite expanded overlay" width="760">
-
-## Features
-
-- Toggleable **DPS**, **Healing**, and **Tanking** meters
-- Damage: total damage, DPS, and group contribution percentage
-- Healing: total healing, HPS, and group contribution percentage
-- Tanking: total damage received, taken-per-second, and group contribution percentage
-- Compact and Expanded overlay modes
-- Detected profession or specialization
-- Ability Score and Illusion-Breaking Strength
-- Gold star and highlight for the local player
-- One-column list with vertical scrolling
-- Movable and manually resizable overlay
-- Saved mode, size, position and lock state
-- Lock button that disables both moving and resizing
-- Reliable overlay recreation when Android leaves a stale overlay state
-- Supported-client detection before VPN startup
-- Portrait control app; the game overlay remains rotation-aware
-- About screen with privacy, license and exact upstream revision
-- Automatic split on channel, line, dungeon, wipe, and phase changes
-- Separate auto-reset lock that preserves data until manual reset
-- Seven-day local encounter history with DPS, Healing, and Tanking views
-- Manual encounter reset
-- Up to 20 displayed players per meter
-- Android-only local capture with no PC relay
-
-BlueMeter Lite intentionally keeps these meters lightweight. It stores only live totals and per-second values; it does not include skill breakdowns, overheal, mitigation, death analysis, skill timelines, target analysis, radar or boss-timer tools.
-
-## Download and install
-
-1. Open the [latest GitHub release](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest).
-2. Download the APK marked **arm64-v8a** for most modern Android phones.
-3. Install the APK.
-4. Open **BlueMeter Lite**.
-5. Grant **Display over other apps** permission.
-6. Tap **Start DPS Meter** and approve Android's VPN request.
-7. Launch BPSR and enter combat.
-
-Android displays a VPN indicator and a foreground-service notification while the meter is active.
-
-## Overlay controls
-
-| Control | Action |
+| Button | What it does |
 |---|---|
-| `DPS` | Rank players by total damage and DPS |
-| `Healing` | Rank players by total healing and HPS |
-| `Tanking` | Rank players by total damage received and taken-per-second |
-| `C` | Compact mode at `180 × 80` |
-| `E` | Expanded mode at `360 × 180` |
-| Header drag | Move the overlay while unlocked |
-| Bottom-right handle | Resize while unlocked |
-| Movement lock icon | Lock or unlock both moving and resizing |
-| Auto-reset icon | Enable or lock automatic encounter splitting |
-| Reset icon | Archive and manually reset the current encounter |
+| **DPS / Healing / Tanking** | Changes which combat meter is shown. |
+| **C** | Compact view. Uses less screen space. |
+| **E** | Expanded view. Shows more player information. |
+| **Grey auto-reset icon** | Automatic reset is **ON**. The meter can start a fresh encounter after a detected map or dungeon change. |
+| **Orange crossed auto-reset icon** | Automatic reset is **LOCKED/OFF**. Current data stays until you press manual reset or stop the meter. |
+| **Grey open lock** | The overlay can be moved and resized. |
+| **Yellow closed lock** | Locks the overlay's position and size so you do not move it by accident. Other buttons still work. |
+| **Reset arrow** | Manually saves and clears the current encounter. |
+| **Drag the top bar** | Moves the overlay while the position lock is open. |
+| **Bottom-right handle** | Resizes the overlay while the position lock is open. |
 
-The selected meter tab, mode, size, position, movement lock and auto-reset lock are restored the next time the overlay starts.
+> [!IMPORTANT]
+> BlueMeter Lite has **two different locks**:
+>
+> - **Orange auto-reset lock:** stops automatic encounter resets.
+> - **Yellow padlock:** only stops the overlay from moving or resizing.
 
-## Display format
+The selected meter, view mode, size, position and lock states are remembered the next time you start the overlay.
 
-Compact:
+## The three meters
+
+- **DPS** — total damage, damage per second and party contribution.
+- **Healing** — total healing, healing per second and party contribution.
+- **Tanking** — total damage received, damage received per second and party contribution.
+
+## Automatic reset and encounter history
+
+With automatic reset enabled, BlueMeter Lite starts a new encounter when it detects a supported map, channel, dungeon, wipe or boss-phase change.
+
+Encounters are saved when:
+
+- an automatic reset happens
+- you press the manual reset button
+- you stop the DPS meter
+
+Open the main BlueMeter Lite app and tap **Encounter history** to review them. History is stored only on your phone and entries older than **7 days** are deleted automatically.
+
+> Some unusual boss phase or wipe behaviour may not always be detected. Use the manual reset button when needed.
+
+## What the numbers mean
+
+Example expanded row:
 
 ```text
-01. ★ MrHard                         2.8M (79.9K)   23%
+01. ★ Player — Frostbeam (49,632 + 2,250)   2.8M (79.9K)   23%
 ```
 
-Expanded:
+- `01` — ranking
+- `★` — your character
+- `Frostbeam` — detected specialization
+- `49,632 + 2,250` — Ability Score + Illusion-Breaking Strength
+- `2.8M` — total amount
+- `79.9K` — amount per second
+- `23%` — share of the group's total
 
-```text
-01. ★ MrHard — Frostbeam (49632+2250)   2.8M (77.8K)   19%
-```
+The meaning of the total changes with the selected tab: damage, healing or damage received.
 
-The name-side values are:
+## Main app buttons
 
-```text
-Ability Score + Illusion-Breaking Strength
-```
-
-The right-side values follow the selected tab:
-
-```text
-DPS:      Total Damage (DPS)
-Healing:  Total Healing (HPS)
-Tanking:  Total Damage Received (Taken Per Second)
-```
-
-
-## Automatic encounter reset
-
-With automatic reset enabled, BlueMeter Lite splits the current meter when it
-detects a channel or line change, entry into another dungeon or map, a confirmed
-wipe, or a conservative boss phase transition.
-
-The crossed-arrows button disables every automatic split. While it is locked,
-the meter remains untouched until manual reset or the meter is stopped.
-
-Desktop ZDPS can use dungeon-objective messages for exact phase boundaries.
-BlueMeter Mobile does not currently decode that objective stream, so mobile
-phase detection uses conservative boss identity and HP-reset signals.
-
-## Encounter history
-
-Open **Encounter history** from the portrait control app to review locally saved
-encounters. Each entry includes DPS, Healing and Tanking tabs.
-
-History stores compact summaries rather than screenshots and automatically
-deletes entries older than seven days.
+| Button | What it does |
+|---|---|
+| **Start DPS Meter** | Opens the overlay and starts local capture. |
+| **Stop DPS Meter** | Stops capture, closes the overlay and saves the current encounter when data exists. |
+| **Encounter history** | Opens saved encounters from the last 7 days. |
+| **About and privacy** | Shows version, privacy and open-source information. |
 
 ## Supported Android clients
 
-| Region/client | Android package |
-|---|---|
-| HaoPlay SEA | `sea.haoplay.game.gp.bpsr` |
-| A Plus Japan / Global | `com.bpsr.apj` |
-| Taiwan / Hong Kong / Macau | `tw.haoplay.game.gp.xhgm` |
-| X.D. regional client | `asia.xdg.game.gp.bpsr` |
+- HaoPlay SEA
+- A Plus Japan / Global
+- Taiwan / Hong Kong / Macau
+- X.D. regional client
 
-The control app shows the detected client before startup. Only installed supported BPSR packages are added to the Android VPN allow-list.
+## Common problems
 
-## Privacy and network behaviour
+<details>
+<summary><strong>The overlay does not appear</strong></summary>
 
-BlueMeter Lite processes supported BPSR traffic locally on the phone and forwards it to the game's original destination. The project does not operate a relay server and does not require an account.
+1. Stop the meter.
+2. Confirm **Display over other apps** is enabled for BlueMeter Lite.
+3. Open BlueMeter Lite and press **Start DPS Meter** again.
 
-It adds no advertising, analytics or cloud synchronization. Encounter history is stored locally and automatically deleted after seven days. See [PRIVACY.md](PRIVACY.md).
+</details>
 
-## Troubleshooting
+<details>
+<summary><strong>The game has no internet</strong></summary>
 
-### Overlay does not appear
+Stop the meter, reopen BlueMeter Lite and start it again. Also confirm the app detects your installed BPSR client.
 
-Stop the meter and press **Start DPS Meter** again. The app now closes any stale overlay and recreates it at a visible position. Also confirm **Display over other apps** permission is enabled.
+</details>
 
-### Game has no internet
+<details>
+<summary><strong>The overlay is too small or in the wrong place</strong></summary>
 
-Stop the meter, reopen BlueMeter Lite and start it again. Confirm the control app detects your BPSR client.
+Tap the **open/closed padlock** until it is unlocked, then drag the top bar or use the bottom-right resize handle. Use **C** or **E** to switch between the default compact and expanded sizes.
 
-### APK does not install over v1.0.0
+</details>
 
-Uninstall v1.0.0 once, then install v1.1.0. This is required because v1.1.0 introduces the permanent signing identity.
+<details>
+<summary><strong>The APK will not install over v1.0.0</strong></summary>
 
-### Class or scores are temporarily missing
+Uninstall v1.0.0 once, then install the newer release. Versions using the permanent signing key can update normally afterward.
 
-Some information appears only after the relevant entity or combat packet is received.
+</details>
 
-## Maintenance status
+## Privacy
 
-BlueMeter Lite is feature-complete and provided as-is. Routine support, diagnosis and feature development are not planned. A future BPSR protocol update can prevent the meter from working.
+Combat information is processed locally on your Android device. BlueMeter Lite adds no user account, advertising, analytics, cloud synchronization or project-operated relay server. See [PRIVACY.md](PRIVACY.md) for details.
 
-## Building from source
+## Project information
 
-Releases are built from a pinned BlueMeter Mobile revision and pinned Flutter version. See [BUILDING.md](BUILDING.md) and [SIGNING-SETUP.md](SIGNING-SETUP.md).
+<details>
+<summary><strong>Building, validation and updates</strong></summary>
 
-## Credits
+- [Building from source](BUILDING.md)
+- [Release signing setup](SIGNING-SETUP.md)
+- [Changelog](CHANGELOG.md)
+- [GitHub Actions](https://github.com/Zudin987/BPSR-BlueMeter-Lite/actions)
 
-- [BlueMeter Mobile](https://github.com/jbourny/bluemetermobile) by jbourny and contributors
-- [BPSR-ZDPS](https://github.com/Blue-Protocol-Source/BPSR-ZDPS) for protocol, profession and attribute references
-- Blue Protocol: Star Resonance and related names belong to their respective owners
+</details>
 
-This is an unofficial community project and is not affiliated with the game's developers or publishers.
+<details>
+<summary><strong>Credits and licence</strong></summary>
 
-## License
+- Based on [BlueMeter Mobile](https://github.com/jbourny/bluemetermobile)
+- Uses protocol and profession references from [BPSR-ZDPS](https://github.com/Blue-Protocol-Source/BPSR-ZDPS)
+- Distributed under the [GNU AGPL-3.0 licence](LICENSE)
+- See [LICENSE-NOTICE.md](LICENSE-NOTICE.md) for source-distribution requirements
 
-BlueMeter Lite is distributed under the [GNU Affero General Public License v3.0](LICENSE).
+Blue Protocol: Star Resonance and related names belong to their respective owners.
 
-Modified APK distributions must provide complete corresponding source, including the Lite patch and exact upstream revision. See [LICENSE-NOTICE.md](LICENSE-NOTICE.md).
+</details>
+
+---
+
+BlueMeter Lite is an unofficial community project and is not affiliated with the game's developers or publishers. Game protocol updates may require a BlueMeter Lite update.
