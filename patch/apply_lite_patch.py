@@ -64,8 +64,8 @@ def main() -> None:
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
 
-    lite_version_name = "1.3.1"
-    lite_version_code = 21
+    lite_version_name = "1.3.2"
+    lite_version_code = 22
 
     upstream_commit_file = upstream / "UPSTREAM_COMMIT.txt"
     if upstream_commit_file.exists():
@@ -107,6 +107,14 @@ def main() -> None:
         upstream
         / "lib/core/analyze/processors/sync_container_data_processor.dart"
     )
+    message_handler_registry = (
+        upstream
+        / "lib/core/analyze/message_handler_registry.dart"
+    )
+    dungeon_snapshot_processor = (
+        upstream
+        / "lib/core/analyze/processors/dungeon_snapshot_processor.dart"
+    )
     encounter_history_service = (
         upstream
         / "lib/core/services/encounter_history_service.dart"
@@ -130,6 +138,7 @@ def main() -> None:
         attr_type,
         sync_near_entities_processor,
         sync_container_data_processor,
+        message_handler_registry,
         icon_patch_root,
     ):
         if not required.exists():
@@ -143,6 +152,10 @@ def main() -> None:
     shutil.copyfile(
         patch_dir / "encounter_history_view.dart",
         encounter_history_view,
+    )
+    shutil.copyfile(
+        patch_dir / "dungeon_snapshot_processor.dart",
+        dungeon_snapshot_processor,
     )
 
 
@@ -466,6 +479,64 @@ def main() -> None:
         encoding="utf-8",
     )
 
+    container_text = sync_container_data_processor.read_text(
+        encoding="utf-8"
+    )
+    container_text = replace_once(
+        container_text,
+        """      if (isFullPlayerData) {
+        _storage.currentPlayerUuid = playerUid;
+        _storage.ensurePlayer(playerUid);
+      }""",
+        """      if (isFullPlayerData) {
+        // Exact map-load boundary used by ZDPS.
+        _storage.onLiteFullPlayerContainerSync();
+
+        _storage.currentPlayerUuid = playerUid;
+        _storage.ensurePlayer(playerUid);
+      }""",
+        "ZDPS full-player map-load signal",
+    )
+    sync_container_data_processor.write_text(
+        container_text,
+        encoding="utf-8",
+    )
+
+    registry_text = message_handler_registry.read_text(
+        encoding="utf-8"
+    )
+    registry_text = replace_once(
+        registry_text,
+        """import 'processors/sync_container_dirty_data_processor.dart';
+""",
+        """import 'processors/sync_container_dirty_data_processor.dart';
+import 'processors/dungeon_snapshot_processor.dart';
+""",
+        "dungeon snapshot import",
+    )
+    registry_text = replace_once(
+        registry_text,
+        """  static const int _methodSyncContainerDirtyData = 0x00000016;
+""",
+        """  static const int _methodSyncContainerDirtyData = 0x00000016;
+  static const int _methodSyncDungeonData = 0x00000017;
+""",
+        "SyncDungeonData method ID",
+    )
+    registry_text = replace_once(
+        registry_text,
+        """    _processors[_methodSyncContainerDirtyData] = SyncContainerDirtyDataProcessor(storage);
+""",
+        """    _processors[_methodSyncContainerDirtyData] = SyncContainerDirtyDataProcessor(storage);
+    _processors[_methodSyncDungeonData] = DungeonSnapshotProcessor(storage);
+""",
+        "SyncDungeonData registration",
+    )
+    message_handler_registry.write_text(
+        registry_text,
+        encoding="utf-8",
+    )
+
     dps_text = dps_data.read_text(encoding="utf-8")
 
     # Insert lightweight metric clocks using a stable field anchor instead of
@@ -765,6 +836,10 @@ String _liteBossName = '';
 double _liteBossLowestHpRatio = 1.0;
 bool _liteBossEngaged = false;
 
+// Exact reset signals used by ZDPS.
+bool _liteSeenFullPlayerContainer = false;
+DateTime? _liteLastMapLoadSignalAt;
+
 bool get _liteHasEncounterData {
   return _fullDpsDatas.values.any((data) {
     return data.totalAttackDamage.toInt() > 0 ||
@@ -795,6 +870,46 @@ void setLiteAutoResetLocked(bool value) {
     return prefs.setBool(_liteAutoResetPreference, value);
   });
   _scheduleNotify();
+}
+
+/// Full local-player SyncContainerData is ZDPS's primary map-load boundary.
+/// The first packet initializes the app; every later packet represents a map
+/// load and ordinary teleports do not emit it.
+void onLiteFullPlayerContainerSync() {
+  final now = DateTime.now();
+
+  if (!_liteSeenFullPlayerContainer) {
+    _liteSeenFullPlayerContainer = true;
+    _liteLastMapLoadSignalAt = now;
+    return;
+  }
+
+  _liteLastMapLoadSignalAt = now;
+  _liteRequestAutoSplit('map_change');
+
+  _monsterInfoDatas.clear();
+  _deadMonsters.clear();
+  _liteResetDetectionState();
+  notifyListeners();
+}
+
+/// Dedicated WorldNtf.SyncDungeonData (0x17) arrival.
+/// It can occur close to the full-player map packet, so avoid double-splitting.
+void onLiteDungeonSnapshot() {
+  final mapSignal = _liteLastMapLoadSignalAt;
+  final sameTransition =
+      mapSignal != null &&
+      DateTime.now().difference(mapSignal) <
+          const Duration(seconds: 3);
+
+  if (!sameTransition) {
+    _liteRequestAutoSplit('new_dungeon');
+  }
+
+  _monsterInfoDatas.clear();
+  _deadMonsters.clear();
+  _liteResetDetectionState();
+  notifyListeners();
 }
 
 String _liteBaseProfessionName(int? professionId) {
