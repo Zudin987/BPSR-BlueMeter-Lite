@@ -94,37 +94,20 @@ Future<void> _restoreLayout() async {
     final defaultWidth = mode == _LiteViewMode.compact ? 180.0 : 360.0;
     final defaultHeight = mode == _LiteViewMode.compact ? 80.0 : 180.0;
 
-    final views = WidgetsBinding.instance.platformDispatcher.views;
-    final view = views.isNotEmpty ? views.first : null;
-    final logicalWidth = view == null
-        ? _maximumWidth
-        : view.physicalSize.width / view.devicePixelRatio;
-    final logicalHeight = view == null
-        ? _maximumHeight
-        : view.physicalSize.height / view.devicePixelRatio;
-
-    final allowedMaximumWidth = logicalWidth < _maximumWidth
-        ? logicalWidth
-        : _maximumWidth;
-    final allowedMaximumHeight = logicalHeight < _maximumHeight
-        ? logicalHeight
-        : _maximumHeight;
-
+    // The overlay isolate reports the overlay window's dimensions, not the
+    // phone's full display. Do not use that view to clamp screen coordinates.
     final width = (prefs.getDouble(_prefWidth) ?? defaultWidth)
-        .clamp(minimumWidth, allowedMaximumWidth)
+        .clamp(minimumWidth, _maximumWidth)
         .toDouble();
     final height = (prefs.getDouble(_prefHeight) ?? defaultHeight)
-        .clamp(minimumHeight, allowedMaximumHeight)
+        .clamp(minimumHeight, _maximumHeight)
         .toDouble();
-
-    final maximumX = logicalWidth > width ? logicalWidth - width : 0.0;
-    final maximumY = logicalHeight > height ? logicalHeight - height : 0.0;
 
     final x = (prefs.getDouble(_prefX) ?? 8.0)
-        .clamp(0.0, maximumX)
+        .clamp(0.0, 10000.0)
         .toDouble();
     final y = (prefs.getDouble(_prefY) ?? 80.0)
-        .clamp(0.0, maximumY)
+        .clamp(0.0, 10000.0)
         .toDouble();
     final locked = prefs.getBool(_prefLocked) ?? false;
 
@@ -343,27 +326,13 @@ Future<void> _toggleLock() async {
 }
 
   void _moveWindow(DragUpdateDetails details) {
-    final views = WidgetsBinding.instance.platformDispatcher.views;
-    final view = views.isNotEmpty ? views.first : null;
-    final logicalWidth = view == null
-        ? _maximumWidth
-        : view.physicalSize.width / view.devicePixelRatio;
-    final logicalHeight = view == null
-        ? _maximumHeight
-        : view.physicalSize.height / view.devicePixelRatio;
-
-    final maximumX = logicalWidth > _windowWidth
-        ? logicalWidth - _windowWidth
-        : 0.0;
-    final maximumY = logicalHeight > _windowHeight
-        ? logicalHeight - _windowHeight
-        : 0.0;
+    if (_isLocked) return;
 
     _windowX = (_windowX + details.delta.dx)
-        .clamp(0.0, maximumX)
+        .clamp(0.0, 10000.0)
         .toDouble();
     _windowY = (_windowY + details.delta.dy)
-        .clamp(0.0, maximumY)
+        .clamp(0.0, 10000.0)
         .toDouble();
 
     FlutterOverlayWindow.moveOverlay(
@@ -433,6 +402,7 @@ Future<void> _toggleLock() async {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onPanStart: _isLocked ? null : (_) {},
       onPanUpdate: _isLocked ? null : _moveWindow,
       onPanEnd: _isLocked ? null : (_) => _saveLayout(),
       child: Container(

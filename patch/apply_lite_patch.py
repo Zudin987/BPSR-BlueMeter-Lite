@@ -41,8 +41,8 @@ def main() -> None:
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
 
-    lite_version_name = "1.11.1"
-    lite_version_code = 16
+    lite_version_name = "1.11.2"
+    lite_version_code = 17
 
     upstream_commit_file = upstream / "UPSTREAM_COMMIT.txt"
     if upstream_commit_file.exists():
@@ -919,7 +919,12 @@ def main() -> None:
                     'BlueMeter Lite $_liteVersion',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  SizedBox(height: 8),
+                  SizedBox(height: 3),
+                  Text(
+                    'by MrEz',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  SizedBox(height: 10),
                   Text(
                     'A lightweight Android DPS overlay for '
                     'Blue Protocol: Star Resonance.',
@@ -1129,7 +1134,16 @@ def main() -> None:
                         style: Theme.of(context).textTheme.headlineSmall
                             ?.copyWith(fontWeight: FontWeight.w800),
                       ),
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 2),
+                      Text(
+                        'by MrEz',
+                        style: Theme.of(context).textTheme.labelLarge
+                            ?.copyWith(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      const SizedBox(height: 7),
                       Text(
                         'Lightweight BPSR DPS overlay — no PC required.',
                         textAlign: TextAlign.center,
