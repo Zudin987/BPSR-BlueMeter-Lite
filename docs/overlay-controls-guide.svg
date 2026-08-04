@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="360" viewBox="0 0 1120 360" role="img" aria-labelledby="title desc">
+  <title id="title">BlueMeter Lite overlay controls</title>
+  <desc id="desc">Visual guide showing meter tabs, compact and expanded mode, auto-reset lock, position lock, manual reset, drag area and resize handle.</desc>
+  <defs>
+    <style>
+      .bg { fill: #111827; }
+      .panel { fill: #1f2937; stroke: #4b5563; stroke-width: 2; }
+      .header { fill: #273449; }
+      .txt { fill: #f9fafb; font-family: Arial, Helvetica, sans-serif; }
+      .muted { fill: #cbd5e1; font-family: Arial, Helvetica, sans-serif; }
+      .small { font-size: 18px; }
+      .label { font-size: 20px; font-weight: 700; }
+      .iconbox { fill: #374151; stroke: #64748b; stroke-width: 1.5; }
+      .active { fill: #2563eb; }
+      .warning { fill: #ea580c; }
+      .locked { fill: #eab308; }
+      .line { stroke: #94a3b8; stroke-width: 2; fill: none; }
+      .white-line { stroke: #f8fafc; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1120" height="360" rx="18"/>
+
+  <rect class="panel" x="52" y="64" width="1016" height="164" rx="16"/>
+  <rect class="header" x="52" y="64" width="1016" height="72" rx="16"/>
+  <rect class="header" x="52" y="112" width="1016" height="24"/>
+
+  <rect class="active" x="76" y="83" width="96" height="38" rx="10"/>
+  <text class="txt label" x="124" y="109" text-anchor="middle">DPS</text>
+
+  <text class="muted label" x="205" y="109">8 players</text>
+  <text class="muted label" x="350" y="109">02:13</text>
+
+  <rect class="iconbox" x="516" y="79" width="58" height="46" rx="10"/>
+  <text class="txt label" x="545" y="109" text-anchor="middle">C</text>
+
+  <rect class="warning" x="590" y="79" width="72" height="46" rx="10"/>
+  <path class="white-line" d="M608 104a14 14 0 0 1 23-11"/>
+  <path class="white-line" d="M632 91l1 8-8-1"/>
+  <path class="white-line" d="M644 100a14 14 0 0 1-23 12"/>
+  <path class="white-line" d="M620 114l-1-8 8 1"/>
+  <path class="white-line" d="M606 88l40 28"/>
+
+  <rect class="locked" x="678" y="79" width="64" height="46" rx="10"/>
+  <path class="white-line" d="M699 99v-5a11 11 0 0 1 22 0v5"/>
+  <rect x="695" y="98" width="30" height="22" rx="4" fill="none" stroke="#f8fafc" stroke-width="3"/>
+  <circle cx="710" cy="108" r="2.5" fill="#f8fafc"/>
+
+  <rect class="iconbox" x="758" y="79" width="64" height="46" rx="10"/>
+  <path class="white-line" d="M806 98a17 17 0 1 0 1 13"/>
+  <path class="white-line" d="M807 88v12h-12"/>
+
+  <text class="txt small" x="78" y="170">01. ★ Player — Frostbeam (49,632 + 2,250)</text>
+  <text class="txt small" x="790" y="170">2.8M (79.9K)</text>
+  <text class="txt small" x="985" y="170">23%</text>
+
+  <text class="muted small" x="78" y="204">Drag this top area to move the overlay</text>
+  <path d="M1046 202 L1062 202 L1062 218" stroke="#94a3b8" stroke-width="4" fill="none"/>
+  <path d="M1050 218 L1062 206" stroke="#94a3b8" stroke-width="3"/>
+  <path d="M1042 218 L1062 198" stroke="#94a3b8" stroke-width="3"/>
+
+  <path class="line" d="M545 126 L545 275" marker-end="url(#arrow)"/>
+  <path class="line" d="M626 126 L626 275" marker-end="url(#arrow)"/>
+  <path class="line" d="M710 126 L710 275" marker-end="url(#arrow)"/>
+  <path class="line" d="M790 126 L790 275" marker-end="url(#arrow)"/>
+  <path class="line" d="M1048 220 L970 285" marker-end="url(#arrow)"/>
+
+  <text class="txt label" x="545" y="309" text-anchor="middle">C / E</text>
+  <text class="muted small" x="545" y="334" text-anchor="middle">Compact / Expanded</text>
+
+  <text class="txt label" x="626" y="309" text-anchor="middle">Auto reset</text>
+  <text class="muted small" x="626" y="334" text-anchor="middle">Orange = locked</text>
+
+  <text class="txt label" x="710" y="309" text-anchor="middle">Position lock</text>
+  <text class="muted small" x="710" y="334" text-anchor="middle">Yellow = locked</text>
+
+  <text class="txt label" x="790" y="309" text-anchor="middle">Manual reset</text>
+  <text class="muted small" x="790" y="334" text-anchor="middle">Save and clear</text>
+
+  <text class="txt label" x="971" y="309" text-anchor="middle">Resize handle</text>
+  <text class="muted small" x="971" y="334" text-anchor="middle">Works when unlocked</text>
+</svg>
