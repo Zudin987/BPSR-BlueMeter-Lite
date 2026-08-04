@@ -37,15 +37,12 @@ jobs:
         working-directory: upstream
         run: |
           echo "Checking that pubspec.yaml was not truncated..."
-
           grep -q "^name:" pubspec.yaml
           grep -q "^version:" pubspec.yaml
           grep -q "^environment:" pubspec.yaml
           grep -q "^dependencies:" pubspec.yaml
           grep -q "^flutter:" pubspec.yaml
-
           echo "pubspec.yaml looks complete."
-          cat pubspec.yaml
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -76,7 +73,7 @@ jobs:
           flutter build apk --release --split-per-abi
 
       - name: Upload APKs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bluemeter-lite-apk
           path: upstream/build/app/outputs/flutter-apk/*.apk
@@ -89,7 +86,7 @@ jobs:
           rm -rf upstream/build
 
       - name: Upload patched source
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bluemeter-lite-patched-source
           path: upstream
