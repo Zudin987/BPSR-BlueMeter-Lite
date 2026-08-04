@@ -427,6 +427,8 @@ def main() -> None:
         fail("could not locate overlay data bridge replacement boundaries")
 
     lite_data_bridge = r'''
+  final Map<String, int> _liteSeasonStrengthCache = {};
+
   String _liteClassName(int? professionId) {
     switch (professionId) {
       case 1:
@@ -468,17 +470,27 @@ def main() -> None:
         .where((entry) => entry.value.totalAttackDamage.toInt() > 0)
         .map((entry) {
           final uid = entry.key;
+          final uidText = uid.toString();
           final dpsData = entry.value;
           final info = storage.getPlayerInfoSync(uid);
 
+          final liveSeasonStrength = info?.seasonStrength ?? 0;
+          if (liveSeasonStrength > 0) {
+            _liteSeasonStrengthCache[uidText] = liveSeasonStrength;
+          }
+
+          final displayedSeasonStrength = liveSeasonStrength > 0
+              ? liveSeasonStrength
+              : (_liteSeasonStrengthCache[uidText] ?? 0);
+
           return <String, dynamic>{
-            'uid': uid.toString(),
+            'uid': uidText,
             'name': info?.name ?? 'Unknown',
             'className':
                 storage.getLiteSubProfessionName(uid) ??
                     _liteClassName(info?.professionId),
             'combatPower': info?.combatPower ?? 0,
-            'illusionBreakingStrength': info?.seasonStrength ?? 0,
+            'illusionBreakingStrength': displayedSeasonStrength,
             'isMe': uid == storage.currentPlayerUuid,
             'dps': dpsData.simpleDps,
             'total': dpsData.totalAttackDamage.toInt(),
@@ -543,7 +555,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.8.0+11",
+        "version: 1.9.0+12",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")

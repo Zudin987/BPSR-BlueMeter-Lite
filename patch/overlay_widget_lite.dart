@@ -13,7 +13,7 @@ class OverlayWidget extends StatefulWidget {
 class _OverlayWidgetState extends State<OverlayWidget> {
   static const int _maxDisplayedPlayers = 20;
   static const double _compactMinimumWidth = 180;
-  static const double _compactMinimumHeight = 56;
+  static const double _compactMinimumHeight = 80;
   static const double _expandedMinimumWidth = 360;
   static const double _expandedMinimumHeight = 96;
   static const double _maximumWidth = 1200;
@@ -473,10 +473,11 @@ String _expandedIdentity(Map<String, dynamic> player) {
   if (combatPower > 0 && illusionBreakingStrength > 0) {
     scorePart = ' ($combatPower+$illusionBreakingStrength)';
   } else if (combatPower > 0) {
-    // The game may not AOI-sync this Season 3 value for other players.
-    scorePart = ' ($combatPower+—)';
+    // Remote Season 3 strength is not guaranteed to be present in game packets.
+    // Show only the real Ability Score when remote strength is unavailable.
+    scorePart = ' ($combatPower)';
   } else if (illusionBreakingStrength > 0) {
-    scorePart = ' (—+$illusionBreakingStrength)';
+    scorePart = ' ($illusionBreakingStrength)';
   }
 
   return '$ownerPrefix$name$classPart$scorePart';
@@ -495,6 +496,7 @@ String _formatContribution(double percentage) {
   return '${percentage.toStringAsFixed(0)}%';
 }
 
+
 Widget _buildPlayerRow({
   required Map<String, dynamic> player,
   required double maxTotal,
@@ -512,7 +514,8 @@ Widget _buildPlayerRow({
   final classColor = _classColor(className);
 
   final compact = _viewMode == _LiteViewMode.compact;
-  final identity = compact ? _compactIdentity(player) : _expandedIdentity(player);
+  final identity =
+      compact ? _compactIdentity(player) : _expandedIdentity(player);
 
   final fontSize = compact
       ? (rowHeight * 0.58).clamp(5.6, 7.4).toDouble()
@@ -534,50 +537,84 @@ Widget _buildPlayerRow({
       ? (columnWidth * 0.12).clamp(24.0, 42.0).toDouble()
       : (columnWidth * 0.075).clamp(32.0, 48.0).toDouble();
 
+  final rankStyle = TextStyle(
+    color: isMe
+        ? const Color(0xFFFFD978)
+        : const Color(0xFFB0B6C1),
+    fontWeight: FontWeight.w700,
+    fontSize: rankFontSize,
+    height: 1,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
+
+  final identityStyle = TextStyle(
+    color: isMe
+        ? const Color(0xFFFFFFFF)
+        : const Color(0xFFE1E4EA),
+    fontWeight: isMe ? FontWeight.w800 : FontWeight.w600,
+    fontSize: fontSize,
+    height: 1,
+  );
+
+  final metricStyle = TextStyle(
+    color: const Color(0xFFF6F7F9),
+    fontWeight: FontWeight.w700,
+    fontSize: metricFontSize,
+    height: 1,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
+
+  final percentageStyle = TextStyle(
+    color: isMe
+        ? const Color(0xFFFFD978)
+        : const Color(0xFFC4CAD5),
+    fontWeight: FontWeight.w700,
+    fontSize: metricFontSize,
+    height: 1,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
+
   return Padding(
     padding: EdgeInsets.symmetric(
       horizontal: (columnWidth * 0.008).clamp(2.0, 5.0).toDouble(),
       vertical: 0,
     ),
     child: Stack(
+      fit: StackFit.expand,
       children: [
-        Positioned.fill(
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: isMe
+                ? const Color(0x2BFFC857)
+                : const Color(0x121A1E27),
+            borderRadius: BorderRadius.circular(2.5),
+            border: isMe
+                ? Border.all(
+                    color: const Color(0x88FFC857),
+                    width: 0.7,
+                  )
+                : null,
+          ),
+        ),
+        FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: ratio,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: isMe
-                  ? const Color(0x2BFFC857)
-                  : const Color(0x121A1E27),
+                  ? classColor.withValues(alpha: 0.48)
+                  : classColor.withValues(alpha: 0.29),
               borderRadius: BorderRadius.circular(2.5),
-              border: isMe
-                  ? Border.all(
-                      color: const Color(0x88FFC857),
-                      width: 0.7,
-                    )
-                  : null,
-            ),
-          ),
-        ),
-        Positioned.fill(
-          child: FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: ratio,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: isMe
-                    ? classColor.withValues(alpha: 0.48)
-                    : classColor.withValues(alpha: 0.29),
-                borderRadius: BorderRadius.circular(2.5),
-              ),
             ),
           ),
         ),
         if (isMe)
           Positioned(
             left: 0,
-            top: 1,
-            bottom: 1,
+            top: 0,
+            bottom: 0,
             child: Container(
-              width: 3,
+              width: 2,
               decoration: BoxDecoration(
                 color: const Color(0xFFFFC857),
                 borderRadius: BorderRadius.circular(2),
@@ -590,55 +627,78 @@ Widget _buildPlayerRow({
             right: 4,
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               SizedBox(
                 width: rankWidth,
-                child: Text(
-                  '${rank.toString().padLeft(2, '0')}.',
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: isMe
-                        ? const Color(0xFFFFD978)
-                        : const Color(0xFFB0B6C1),
-                    fontWeight: FontWeight.w700,
-                    fontSize: rankFontSize,
-                    height: 1,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                height: rowHeight,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${rank.toString().padLeft(2, '0')}.',
+                    maxLines: 1,
+                    textAlign: TextAlign.left,
+                    textHeightBehavior: const TextHeightBehavior(
+                      applyHeightToFirstAscent: false,
+                      applyHeightToLastDescent: false,
+                    ),
+                    strutStyle: StrutStyle(
+                      fontSize: rankFontSize,
+                      height: 1,
+                      forceStrutHeight: true,
+                    ),
+                    style: rankStyle,
                   ),
                 ),
               ),
               Expanded(
-                child: Text(
-                  identity,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isMe
-                        ? const Color(0xFFFFFFFF)
-                        : const Color(0xFFE1E4EA),
-                    fontWeight: isMe ? FontWeight.w800 : FontWeight.w600,
-                    fontSize: fontSize,
-                    height: 1,
+                child: SizedBox(
+                  height: rowHeight,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      identity,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.left,
+                      textHeightBehavior: const TextHeightBehavior(
+                        applyHeightToFirstAscent: false,
+                        applyHeightToLastDescent: false,
+                      ),
+                      strutStyle: StrutStyle(
+                        fontSize: fontSize,
+                        height: 1,
+                        forceStrutHeight: true,
+                      ),
+                      style: identityStyle,
+                    ),
                   ),
                 ),
               ),
               SizedBox(width: compact ? 2 : 5),
               SizedBox(
                 width: metricWidth,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
+                height: rowHeight,
+                child: Align(
                   alignment: Alignment.centerRight,
-                  child: Text(
-                    '${_formatNumber(total)} (${_formatNumber(dps)})',
-                    maxLines: 1,
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: const Color(0xFFF6F7F9),
-                      fontWeight: FontWeight.w700,
-                      fontSize: metricFontSize,
-                      height: 1,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '${_formatNumber(total)} (${_formatNumber(dps)})',
+                      maxLines: 1,
+                      textAlign: TextAlign.right,
+                      textHeightBehavior: const TextHeightBehavior(
+                        applyHeightToFirstAscent: false,
+                        applyHeightToLastDescent: false,
+                      ),
+                      strutStyle: StrutStyle(
+                        fontSize: metricFontSize,
+                        height: 1,
+                        forceStrutHeight: true,
+                      ),
+                      style: metricStyle,
                     ),
                   ),
                 ),
@@ -646,18 +706,23 @@ Widget _buildPlayerRow({
               SizedBox(width: compact ? 2 : 5),
               SizedBox(
                 width: percentageWidth,
-                child: Text(
-                  _formatContribution(contribution),
-                  maxLines: 1,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    color: isMe
-                        ? const Color(0xFFFFD978)
-                        : const Color(0xFFC4CAD5),
-                    fontWeight: FontWeight.w700,
-                    fontSize: metricFontSize,
-                    height: 1,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                height: rowHeight,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    _formatContribution(contribution),
+                    maxLines: 1,
+                    textAlign: TextAlign.right,
+                    textHeightBehavior: const TextHeightBehavior(
+                      applyHeightToFirstAscent: false,
+                      applyHeightToLastDescent: false,
+                    ),
+                    strutStyle: StrutStyle(
+                      fontSize: metricFontSize,
+                      height: 1,
+                      forceStrutHeight: true,
+                    ),
+                    style: percentageStyle,
                   ),
                 ),
               ),

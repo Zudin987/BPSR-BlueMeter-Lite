@@ -1,62 +1,50 @@
-# BlueMeter Lite v0.7 — Season 3 and sub-profession correction
+# BlueMeter Lite v0.8 update
 
 Replace these GitHub files:
 
 1. `patch/overlay_widget_lite.dart`
 2. `patch/apply_lite_patch.py`
 
-## Season 3 correction
+## Remote Illusion-Breaking Strength
 
-BlueMeter previously treated `12690/12691` as season strength. Those IDs are
-season-damage-increase percentage attributes. v0.7 changes the parser to:
+The app cannot guarantee this value for every other player because the normal
+team-member packet provides Ability Score and profession but not Season 3
+Illusion-Breaking Strength.
 
-- `11440` — Illusion-Breaking Strength
-- `11441` — total Illusion-Breaking Strength
+v0.8 therefore:
 
-If the value is unavailable, Expanded mode shows an em dash instead of a fake
-zero, for example: `(49632+—)`.
+- shows `(AbilityScore+Strength)` when a real strength value exists
+- shows only `(AbilityScore)` when remote strength is unavailable
+- no longer displays misleading `+—`
+- caches the last non-zero value per player for the current app session if the
+  game sends it temporarily
 
-## Correct base profession names
+The app does not guess or derive another player's strength.
 
-- Stormblade
-- Frost Mage
-- Twin Striker
-- Wind Knight
-- Verdant Oracle
-- Dorothy
-- Heavy Guardian
-- Dark Spirit Dance Ritual Blade
-- Marksman
-- Shield Knight
-- Beat Performer
-- Lucy
-- Natsu
+## Vertical alignment
 
-The previous `Soul Musician` label is corrected to `Beat Performer`.
+Every element inside a DPS row now has explicit middle alignment:
 
-## ZDPS-style sub-profession detection
+- rank
+- player identity
+- total damage and DPS
+- contribution percentage
 
-A lightweight runtime map detects these specs from distinctive damage skill IDs:
+The rows use centered `Align` widgets, centered Row cross-axis alignment,
+forced strut height, and controlled text-height behaviour.
 
-- Iaido / Moonstrike
-- Icicle / Frostbeam
-- Formless Expertise / Crimson Expertise
-- Vanguard / Skyward
-- Smite / Lifebind
-- Earthfort / Block
-- Wildpack / Falconry
-- Recovery / Shield
-- Dissonance / Concerto
+## Compact size
 
-Expanded mode prefers the detected sub-profession. Until a distinctive skill is
-seen, it falls back to the base profession name.
+Compact mode now switches to:
 
-## Limitation
+`180 × 80`
 
-Illusion-Breaking Strength is not normally AOI-synced for other nearby players.
-It may be available reliably only for the local character. The app therefore
-shows `—` when the network stream does not contain the value.
+Its manual minimum height is also 80 px.
+
+Expanded mode remains:
+
+`360 × 180`
 
 ## Version
 
-`1.8.0+11`
+`1.9.0+12`
