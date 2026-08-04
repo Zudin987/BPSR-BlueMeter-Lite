@@ -3,13 +3,6 @@ enum _LiteViewMode {
   expanded,
 }
 
-class _LiteOverlayPreset {
-  const _LiteOverlayPreset(this.width, this.height);
-
-  final int width;
-  final int height;
-}
-
 class OverlayWidget extends StatefulWidget {
   const OverlayWidget({super.key});
 
@@ -20,18 +13,16 @@ class OverlayWidget extends StatefulWidget {
 class _OverlayWidgetState extends State<OverlayWidget> {
   static const int _maxDisplayedPlayers = 20;
   static const double _compactMinimumWidth = 180;
+  static const double _compactMinimumHeight = 56;
   static const double _expandedMinimumWidth = 360;
+  static const double _expandedMinimumHeight = 96;
   static const double _maximumWidth = 1200;
-  static const double _minimumHeight = 96;
   static const double _maximumHeight = 620;
 
   List<Map<String, dynamic>> _players = const [];
   int _combatTime = 0;
   StreamSubscription? _overlaySubscription;
-  Timer? _autoResizeTimer;
-
   _LiteViewMode _viewMode = _LiteViewMode.expanded;
-  int _lastAutoPlayerCount = -1;
   int _lastResizeRequestMs = 0;
 
   double _windowX = 8;
@@ -62,17 +53,12 @@ class _OverlayWidgetState extends State<OverlayWidget> {
         }
       });
 
-      _scheduleAutoResize();
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scheduleAutoResize(immediate: true);
-    });
   }
 
   @override
   void dispose() {
-    _autoResizeTimer?.cancel();
     _overlaySubscription?.cancel();
     super.dispose();
   }
@@ -184,62 +170,7 @@ String _modeLabel() {
 }
 
 
-_LiteOverlayPreset _presetForPlayerCount(int count) {
-  final safeCount = count.clamp(0, _maxDisplayedPlayers).toInt();
 
-  if (_viewMode == _LiteViewMode.compact) {
-    if (safeCount <= 5) {
-      final rows = safeCount == 0 ? 2 : safeCount;
-      final height = (35 + rows * 22).clamp(92, 145).toInt();
-      return _LiteOverlayPreset(300, height);
-    }
-
-    if (safeCount <= 10) {
-      final height = (35 + safeCount * 20).clamp(150, 235).toInt();
-      return _LiteOverlayPreset(340, height);
-    }
-
-    // Always one column. Additional rows are reached by scrolling.
-    return const _LiteOverlayPreset(390, 270);
-  }
-
-  if (safeCount <= 5) {
-    final rows = safeCount == 0 ? 2 : safeCount;
-    final height = (38 + rows * 25).clamp(100, 164).toInt();
-    return _LiteOverlayPreset(540, height);
-  }
-
-  if (safeCount <= 10) {
-    final height = (38 + safeCount * 22).clamp(170, 258).toInt();
-    return _LiteOverlayPreset(640, height);
-  }
-
-  // Expanded raid view also stays one column.
-  return const _LiteOverlayPreset(720, 320);
-}
-
-int _autoTierForCount(int count) {
-  if (count <= 5) return 5;
-  if (count <= 10) return 10;
-  return 20;
-}
-
-void _scheduleAutoResize({bool immediate = false}) {
-  _autoResizeTimer?.cancel();
-  _autoResizeTimer = Timer(
-    Duration(milliseconds: immediate ? 0 : 650),
-    () {
-      if (!mounted) return;
-
-      final tier = _autoTierForCount(_activePlayerCount);
-      final preset = _presetForPlayerCount(_activePlayerCount);
-
-      if (tier == _lastAutoPlayerCount && !immediate) return;
-      _lastAutoPlayerCount = tier;
-      _resizeOverlay(preset.width.toDouble(), preset.height.toDouble());
-    },
-  );
-}
 
 
 double get _minimumWidthForCurrentMode {
@@ -248,11 +179,19 @@ double get _minimumWidthForCurrentMode {
       : _expandedMinimumWidth;
 }
 
+double get _minimumHeightForCurrentMode {
+  return _viewMode == _LiteViewMode.compact
+      ? _compactMinimumHeight
+      : _expandedMinimumHeight;
+}
+
 Future<void> _resizeOverlay(double width, double height) async {
   final safeWidth = width
       .clamp(_minimumWidthForCurrentMode, _maximumWidth)
       .toInt();
-  final safeHeight = height.clamp(_minimumHeight, _maximumHeight).toInt();
+  final safeHeight = height
+      .clamp(_minimumHeightForCurrentMode, _maximumHeight)
+      .toInt();
 
   try {
     await FlutterOverlayWindow.resizeOverlay(
@@ -265,15 +204,26 @@ Future<void> _resizeOverlay(double width, double height) async {
   }
 }
 
+
 void _toggleViewMode() {
+  final nextMode = _viewMode == _LiteViewMode.compact
+      ? _LiteViewMode.expanded
+      : _LiteViewMode.compact;
+
   setState(() {
-    _viewMode = _viewMode == _LiteViewMode.compact
-        ? _LiteViewMode.expanded
-        : _LiteViewMode.compact;
-    _lastAutoPlayerCount = -1;
+    _viewMode = nextMode;
   });
 
-  _scheduleAutoResize(immediate: true);
+  if (nextMode == _LiteViewMode.compact) {
+    // Compact always begins at its true minimum size.
+    _resizeOverlay(
+      _compactMinimumWidth,
+      _compactMinimumHeight,
+    );
+  } else {
+    // Expanded always begins at the requested minimum presentation size.
+    _resizeOverlay(360, 180);
+  }
 }
 
   void _moveWindow(DragUpdateDetails details) {
@@ -289,7 +239,6 @@ void _toggleViewMode() {
     BuildContext context,
     DragStartDetails details,
   ) {
-    _autoResizeTimer?.cancel();
     _resizeStartSize = MediaQuery.of(context).size;
     _resizeStartPointer = details.globalPosition;
 
@@ -305,7 +254,8 @@ void _toggleViewMode() {
         (startSize.width + difference.dx)
             .clamp(_minimumWidthForCurrentMode, _maximumWidth);
     final height =
-        (startSize.height + difference.dy).clamp(_minimumHeight, _maximumHeight);
+        (startSize.height + difference.dy)
+            .clamp(_minimumHeightForCurrentMode, _maximumHeight);
 
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - _lastResizeRequestMs < 32) return;
@@ -520,14 +470,14 @@ Widget _buildPlayerRow({
   final identity = compact ? _compactIdentity(player) : _expandedIdentity(player);
 
   final fontSize = compact
-      ? (rowHeight * 0.38).clamp(6.8, 10.4).toDouble()
-      : (rowHeight * 0.38).clamp(8.2, 11.0).toDouble();
+      ? (rowHeight * 0.58).clamp(5.6, 7.4).toDouble()
+      : (rowHeight * 0.58).clamp(6.2, 8.0).toDouble();
   final rankFontSize = compact
-      ? (fontSize - 0.3).clamp(6.5, 9.8).toDouble()
-      : (fontSize - 0.4).clamp(7.8, 10.2).toDouble();
+      ? (fontSize - 0.2).clamp(5.3, 7.1).toDouble()
+      : (fontSize - 0.2).clamp(5.9, 7.7).toDouble();
   final metricFontSize = compact
-      ? (fontSize + 0.05).clamp(6.9, 10.5).toDouble()
-      : (fontSize + 0.1).clamp(8.2, 11.1).toDouble();
+      ? (fontSize + 0.05).clamp(5.7, 7.5).toDouble()
+      : (fontSize + 0.05).clamp(6.3, 8.1).toDouble();
 
   final rankWidth = compact
       ? (columnWidth * 0.105).clamp(18.0, 30.0).toDouble()
@@ -542,7 +492,7 @@ Widget _buildPlayerRow({
   return Padding(
     padding: EdgeInsets.symmetric(
       horizontal: (columnWidth * 0.008).clamp(2.0, 5.0).toDouble(),
-      vertical: 0.5,
+      vertical: 0,
     ),
     child: Stack(
       children: [
@@ -720,7 +670,7 @@ Widget _buildMeterBody({
   final compact = _viewMode == _LiteViewMode.compact;
 
   // Fixed readable row heights. ListView provides scrolling at every size.
-  final rowHeight = compact ? 20.0 : 22.0;
+  final rowHeight = compact ? 10.0 : 11.0;
 
   if (visiblePlayers.isEmpty) {
     return Center(

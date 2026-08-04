@@ -381,7 +381,7 @@ def main() -> None:
     dart = regex_once(
         dart,
         r"height:\s*400,\s*width:\s*600,",
-        "height: 100,\n      width: 540,",
+        "height: 180,\n      width: 360,",
         "overlay dimensions",
     )
     dart = replace_once(
@@ -403,7 +403,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.6.0+9",
+        "version: 1.7.0+10",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")
