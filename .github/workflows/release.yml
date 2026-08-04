@@ -127,7 +127,26 @@ jobs:
             fi
           done
 
-          "$APKSIGNER" verify --print-certs "$FIRST_APK"             | grep "Signer #1 certificate SHA-256 digest:"             > SIGNING-CERT-SHA256.txt
+          test -n "$FIRST_APK"
+
+          CERT_OUTPUT_FILE="$(mktemp)"
+          "$APKSIGNER" verify --print-certs "$FIRST_APK"             > "$CERT_OUTPUT_FILE" 2>&1
+
+          echo "Certificate output from apksigner:"
+          cat "$CERT_OUTPUT_FILE"
+
+          CERT_LINE="$(
+            grep -i -m1 -E               'certificate[[:space:]]+SHA-256[[:space:]]+digest:'               "$CERT_OUTPUT_FILE"               || true
+          )"
+
+          rm -f "$CERT_OUTPUT_FILE"
+
+          if [ -z "$CERT_LINE" ]; then
+            echo "Could not extract the signing certificate SHA-256 digest." >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$CERT_LINE" > SIGNING-CERT-SHA256.txt
 
       - name: Prepare permanent release assets
         shell: bash
