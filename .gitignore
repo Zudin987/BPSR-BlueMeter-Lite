@@ -1,0 +1,18 @@
+# Generated build directories
+upstream/
+build-output/
+dist/
+
+# Permanent signing material — never commit
+private-signing/
+*.jks
+*.keystore
+key.properties
+
+# Local/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+__pycache__/
+*.pyc
