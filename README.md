@@ -1,11 +1,11 @@
 <div align="center">
 
 # BlueMeter Lite
+BlueMeter Lite is a lightweight Android combat meter for Blue Protocol: Star Resonance. It displays DPS, healing and damage received directly over the game without requiring a PC.
 
-**A lightweight Android combat meter for Blue Protocol: Star Resonance.**
+The project is an independently maintained fork of BlueMeter Mobile, expanded with multi-region client support, automatic encounter detection, encounter history, movable compact and expanded overlays, and improved reset and locking controls.
 
-Shows **DPS, Healing and Tanking** directly above the game.  
-**No PC required.**
+BlueMeter Lite is free, open source and intended as an unofficial community tool. It is not affiliated with or endorsed by the game’s developers, publishers, BlueMeter Mobile or ZDPS.
 
 [**Download the latest APK**](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest)
 
