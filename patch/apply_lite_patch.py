@@ -354,12 +354,19 @@ def main() -> None:
     sync_near_entities_processor.write_text(near_text, encoding="utf-8")
 
     dps_text = dps_data.read_text(encoding="utf-8")
-    dps_text = replace_once(
-        dps_text,
-        """  int activeCombatTicks = 0;
 
-  Int64 totalAttackDamage = Int64.ZERO;""",
-        """  int activeCombatTicks = 0;
+    # Insert lightweight metric clocks using a stable field anchor instead of
+    # depending on an exact combination of blank lines.
+    if "int? liteDamageStartTick;" not in dps_text:
+        metric_clock_anchor = "  int activeCombatTicks = 0;"
+        metric_clock_index = dps_text.find(metric_clock_anchor)
+        if metric_clock_index == -1:
+            fail("could not locate DpsData activeCombatTicks field")
+
+        metric_clock_insert_at = (
+            metric_clock_index + len(metric_clock_anchor)
+        )
+        metric_clock_fields = """
 
   // BlueMeter Lite keeps separate clocks for each live meter so Healing or
   // Tanking activity never changes a player's DPS denominator.
@@ -369,25 +376,24 @@ def main() -> None:
   int liteHealingLastTick = 0;
   int? liteTakenStartTick;
   int liteTakenLastTick = 0;
+"""
+        dps_text = (
+            dps_text[:metric_clock_insert_at]
+            + metric_clock_fields
+            + dps_text[metric_clock_insert_at:]
+        )
 
-  Int64 totalAttackDamage = Int64.ZERO;""",
-        "Lite metric clocks",
-    )
-    dps_text = replace_once(
-        dps_text,
-        """  double get simpleTakenDps {
-    if (startLoggedTick == null) return 0.0;
-    double seconds = (lastLoggedTick - startLoggedTick!) / 1000.0;
-    if (seconds < 1.0) seconds = 1.0;
-    return totalTakenDamage.toDouble() / seconds;
-  }
-}""",
-        """  double get simpleTakenDps {
-    if (startLoggedTick == null) return 0.0;
-    double seconds = (lastLoggedTick - startLoggedTick!) / 1000.0;
-    if (seconds < 1.0) seconds = 1.0;
-    return totalTakenDamage.toDouble() / seconds;
-  }
+    # Add rate getters immediately before the DpsData class's final brace.
+    # This remains stable even when upstream reformats simpleTakenDps.
+    if "double get liteHps" not in dps_text:
+        if "double get simpleTakenDps" not in dps_text:
+            fail("could not locate DpsData simpleTakenDps getter")
+
+        dps_class_close = dps_text.rfind("\n}")
+        if dps_class_close == -1:
+            fail("could not locate DpsData closing brace")
+
+        lite_rate_getters = """
 
   double _liteRate(Int64 total, int? startTick, int lastTick) {
     if (startTick == null || total.toInt() <= 0) return 0.0;
@@ -404,9 +410,13 @@ def main() -> None:
 
   double get liteTakenDps =>
       _liteRate(totalTakenDamage, liteTakenStartTick, liteTakenLastTick);
-}""",
-        "Lite metric rate getters",
-    )
+"""
+        dps_text = (
+            dps_text[:dps_class_close]
+            + lite_rate_getters
+            + dps_text[dps_class_close:]
+        )
+
     dps_data.write_text(dps_text, encoding="utf-8")
 
     # Keep only lightweight live totals for Damage, Healing, and Tanking.
