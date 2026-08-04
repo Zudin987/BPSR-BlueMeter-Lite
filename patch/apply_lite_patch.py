@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import shutil
 import sys
 import textwrap
@@ -40,12 +41,34 @@ def main() -> None:
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
 
+    lite_version_name = "1.11.0"
+    lite_version_code = 15
+
+    upstream_commit_file = upstream / "UPSTREAM_COMMIT.txt"
+    if upstream_commit_file.exists():
+        upstream_commit = upstream_commit_file.read_text(
+            encoding="utf-8"
+        ).strip()
+    else:
+        try:
+            upstream_commit = subprocess.check_output(
+                ["git", "-C", str(upstream), "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
+        except Exception:
+            upstream_commit = "unknown"
+
+    upstream_commit_short = (
+        upstream_commit[:12] if upstream_commit != "unknown" else "unknown"
+    )
+
     main_dart = upstream / "lib/main.dart"
     packet_service = (
         upstream
         / "android/app/src/main/kotlin/com/bluemeter/bluemeter_mobile/"
         / "PacketCaptureService.kt"
     )
+    main_activity = packet_service.parent / "MainActivity.kt"
     tcp_proxy = packet_service.parent / "TcpProxy.kt"
     pubspec = upstream / "pubspec.yaml"
     manifest = upstream / "android/app/src/main/AndroidManifest.xml"
@@ -61,6 +84,7 @@ def main() -> None:
     for required in (
         main_dart,
         packet_service,
+        main_activity,
         tcp_proxy,
         pubspec,
         manifest,
@@ -74,6 +98,45 @@ def main() -> None:
             fail(f"missing upstream file: {required}")
 
     shutil.copyfile(patch_dir / "TcpProxy.kt", tcp_proxy)
+
+
+    activity_text = main_activity.read_text(encoding="utf-8")
+    activity_text = replace_once(
+        activity_text,
+        (
+            '    private val UPSTREAM_EVENT_CHANNEL = '
+            '"com.bluemeter.mobile/upstream_stream"\n'
+        ),
+        (
+            '    private val UPSTREAM_EVENT_CHANNEL = '
+            '"com.bluemeter.mobile/upstream_stream"\n'
+            '    private val supportedGamePackages = listOf(\n'
+            '        "sea.haoplay.game.gp.bpsr",\n'
+            '        "com.bpsr.apj",\n'
+            '        "tw.haoplay.game.gp.xhgm",\n'
+            '        "asia.xdg.game.gp.bpsr"\n'
+            '    )\n'
+        ),
+        "MainActivity supported package list",
+    )
+    activity_text = replace_once(
+        activity_text,
+        '            if (call.method == "startVpn") {',
+        '''            if (call.method == "getInstalledSupportedPackages") {
+                val installedPackages = supportedGamePackages.filter {
+                    gamePackage ->
+                    try {
+                        packageManager.getApplicationInfo(gamePackage, 0)
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                result.success(installedPackages)
+            } else if (call.method == "startVpn") {''',
+        "MainActivity installed-package method",
+    )
+    main_activity.write_text(activity_text, encoding="utf-8")
 
     service = packet_service.read_text(encoding="utf-8")
     service = replace_once(
@@ -395,6 +458,22 @@ def main() -> None:
 
     dart = main_dart.read_text(encoding="utf-8")
 
+
+    dart = replace_once(
+        dart,
+        (
+            "import 'package:flutter_overlay_window/"
+            "flutter_overlay_window.dart';\n"
+        ),
+        (
+            "import 'package:flutter_overlay_window/"
+            "flutter_overlay_window.dart';\n"
+            "import 'package:shared_preferences/shared_preferences.dart';\n"
+            "import 'package:url_launcher/url_launcher.dart';\n"
+        ),
+        "Lite persistence and URL imports",
+    )
+
     imports_to_remove = [
         "import 'package:bluemeter_mobile/views/dps_view.dart';\n",
         "import 'package:bluemeter_mobile/views/nearby_view.dart';\n",
@@ -553,6 +632,72 @@ def main() -> None:
         + dart[packet_handler_start:]
     )
 
+
+    home_state_start = dart.find(
+        "class _HomePageState extends State<HomePage>"
+    )
+    if home_state_start == -1:
+        fail("could not locate HomePage state")
+
+    channel_marker = """  static const upstreamEventChannel = EventChannel(
+    'com.bluemeter.mobile/upstream_stream',
+  );
+"""
+    channel_index = dart.find(channel_marker, home_state_start)
+    if channel_index == -1:
+        fail("could not locate HomePage channel constants")
+
+    lite_constants = f"""  static const Map<String, String> _liteClientLabels = {{
+    'sea.haoplay.game.gp.bpsr': 'HaoPlay SEA',
+    'com.bpsr.apj': 'A Plus Japan / Global',
+    'tw.haoplay.game.gp.xhgm': 'Taiwan / Hong Kong / Macau',
+    'asia.xdg.game.gp.bpsr': 'X.D. regional client',
+  }};
+
+  static const String _liteVersion = '{lite_version_name}';
+  static const String _liteUpstreamCommit = '{upstream_commit}';
+
+"""
+    channel_insert_at = channel_index + len(channel_marker)
+    dart = (
+        dart[:channel_insert_at]
+        + lite_constants
+        + dart[channel_insert_at:]
+    )
+
+    vpn_field = "  bool _isVpnRunning = false;"
+    vpn_field_index = dart.find(vpn_field, home_state_start)
+    if vpn_field_index == -1:
+        fail("could not locate HomePage VPN state field")
+
+    vpn_field_insert_at = vpn_field_index + len(vpn_field)
+    dart = (
+        dart[:vpn_field_insert_at]
+        + "\n"
+        + "  List<String> _installedSupportedPackages = const [];\n"
+        + "  bool _clientCheckComplete = false;\n"
+        + "  bool _clientCheckFailed = false;"
+        + dart[vpn_field_insert_at:]
+    )
+
+    home_init_start = dart.find(
+        "  void initState() {",
+        home_state_start,
+    )
+    home_super = dart.find(
+        "    super.initState();",
+        home_init_start,
+    )
+    if home_init_start == -1 or home_super == -1:
+        fail("could not locate HomePage initState")
+
+    home_super_end = home_super + len("    super.initState();")
+    dart = (
+        dart[:home_super_end]
+        + "\n    _refreshSupportedClients();"
+        + dart[home_super_end:]
+    )
+
     dart = dart.replace("title: 'BlueMeter Mobile'", "title: 'BlueMeter Lite'")
     dart = dart.replace(
         "title: const Text('BlueMeter Mobile')",
@@ -573,12 +718,416 @@ def main() -> None:
         "height: 180,\n      width: 360,",
         "overlay dimensions",
     )
-    dart = replace_once(
+    dart = regex_once(
         dart,
-        "const OverlayPosition(0, 100)",
-        "const OverlayPosition(8, 80)",
-        "initial overlay position",
+        (
+            r"\s*// Move to a safe initial position \(logical pixels\)\s*"
+            r"await Future\.delayed\("
+            r"const Duration\(milliseconds:\s*100\)\);\s*"
+            r"await FlutterOverlayWindow\.moveOverlay\(\s*"
+            r"const OverlayPosition\(0,\s*100\),\s*"
+            r"\);\s*"
+        ),
+        "\n",
+        "legacy initial overlay move",
     )
+
+
+    home_tail_start = dart.find(
+        "  Future<void> _startVpn() async {",
+        home_state_start,
+    )
+    if home_tail_start == -1:
+        fail("could not locate HomePage service methods")
+
+    lite_home_tail = r"""
+  Future<List<String>> _refreshSupportedClients() async {
+    try {
+      final installed =
+          await platform.invokeListMethod<String>(
+            'getInstalledSupportedPackages',
+          ) ??
+          const <String>[];
+
+      if (mounted) {
+        setState(() {
+          _installedSupportedPackages =
+              List<String>.from(installed, growable: false);
+          _clientCheckComplete = true;
+          _clientCheckFailed = false;
+        });
+      }
+
+      return installed;
+    } on PlatformException catch (error) {
+      _logger.error(
+        'Could not check installed BPSR clients',
+        error: error.message,
+      );
+
+      if (mounted) {
+        setState(() {
+          _installedSupportedPackages = const [];
+          _clientCheckComplete = true;
+          _clientCheckFailed = true;
+        });
+      }
+
+      return const <String>[];
+    }
+  }
+
+  String _clientName(String packageName) {
+    return _liteClientLabels[packageName] ?? packageName;
+  }
+
+  Future<void> _showUnsupportedClientDialog() async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          icon: const Icon(Icons.phone_android_rounded),
+          title: const Text('No supported BPSR client found'),
+          content: const Text(
+            'Install one of these Android clients before starting the meter:\n\n'
+            '• HaoPlay SEA\n'
+            '• A Plus Japan / Global\n'
+            '• Taiwan / Hong Kong / Macau\n'
+            '• X.D. regional client',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openExternalUrl(String rawUrl) async {
+    final uri = Uri.parse(rawUrl);
+    final opened = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open the link.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showAboutDialog() async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          icon: const Icon(Icons.speed_rounded),
+          title: const Text('About BlueMeter Lite'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'BlueMeter Lite $_liteVersion',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'A lightweight Android DPS overlay for '
+                    'Blue Protocol: Star Resonance.',
+                  ),
+                  SizedBox(height: 14),
+                  Text(
+                    'Privacy',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Supported BPSR traffic is processed locally on this '
+                    'device. BlueMeter Lite adds no advertising, analytics, '
+                    'accounts or project-operated relay server.',
+                  ),
+                  SizedBox(height: 14),
+                  Text(
+                    'Open source',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'License: GNU AGPL-3.0\n'
+                    'Based on BlueMeter Mobile\n'
+                    'Upstream commit: $_liteUpstreamCommit',
+                  ),
+                  SizedBox(height: 14),
+                  Text(
+                    'Unofficial community project. Not affiliated with the '
+                    'game developers or publishers.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => _openExternalUrl(
+                'https://github.com/Zudin987/BPSR-BlueMeter-Lite',
+              ),
+              child: const Text('GitHub'),
+            ),
+            TextButton(
+              onPressed: () => _openExternalUrl(
+                'https://github.com/Zudin987/'
+                'BPSR-BlueMeter-Lite/blob/main/PRIVACY.md',
+              ),
+              child: const Text('Privacy'),
+            ),
+            TextButton(
+              onPressed: () => _openExternalUrl(
+                'https://github.com/Zudin987/'
+                'BPSR-BlueMeter-Lite/blob/main/LICENSE',
+              ),
+              child: const Text('License'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _startVpn() async {
+    try {
+      await platform.invokeMethod('startVpn');
+      if (!mounted) return;
+
+      setState(() {
+        _isVpnRunning = true;
+      });
+
+      _packetSubscription = eventChannel.receiveBroadcastStream().listen(
+        _onPacketData,
+      );
+      _upstreamSubscription =
+          upstreamEventChannel.receiveBroadcastStream().listen(
+            _onUpstreamData,
+          );
+    } on PlatformException catch (error) {
+      _logger.error('Failed to start VPN', error: error.message);
+    }
+  }
+
+  Future<void> _stopVpn() async {
+    try {
+      await platform.invokeMethod('stopVpn');
+      if (!mounted) return;
+
+      setState(() {
+        _isVpnRunning = false;
+      });
+
+      await _packetSubscription?.cancel();
+      await _upstreamSubscription?.cancel();
+      _packetSubscription = null;
+      _upstreamSubscription = null;
+    } on PlatformException catch (error) {
+      _logger.error('Failed to stop VPN', error: error.message);
+    }
+  }
+
+  Future<void> _toggleService() async {
+    if (_isVpnRunning) {
+      await _stopVpn();
+      await FlutterOverlayWindow.closeOverlay();
+      return;
+    }
+
+    final installedClients = await _refreshSupportedClients();
+    if (installedClients.isEmpty) {
+      await _showUnsupportedClientDialog();
+      return;
+    }
+
+    final overlayPermission =
+        await FlutterOverlayWindow.isPermissionGranted();
+    if (!overlayPermission) {
+      await FlutterOverlayWindow.requestPermission();
+      return;
+    }
+
+    await _startOverlay();
+    await _startVpn();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final detectedNames = _installedSupportedPackages
+        .map(_clientName)
+        .join(', ');
+
+    final String clientStatus;
+    final Color statusColor;
+    final IconData statusIcon;
+
+    if (!_clientCheckComplete) {
+      clientStatus = 'Checking installed BPSR client…';
+      statusColor = colorScheme.secondary;
+      statusIcon = Icons.hourglass_top_rounded;
+    } else if (_clientCheckFailed) {
+      clientStatus = 'Could not check installed clients.';
+      statusColor = colorScheme.error;
+      statusIcon = Icons.error_outline_rounded;
+    } else if (_installedSupportedPackages.isEmpty) {
+      clientStatus = 'No supported BPSR client detected';
+      statusColor = colorScheme.error;
+      statusIcon = Icons.warning_amber_rounded;
+    } else {
+      clientStatus = 'Detected: $detectedNames';
+      statusColor = Colors.greenAccent.shade400;
+      statusIcon = Icons.check_circle_outline_rounded;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('BlueMeter Lite'),
+        actions: [
+          IconButton(
+            tooltip: 'About',
+            onPressed: _showAboutDialog,
+            icon: const Icon(Icons.info_outline_rounded),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: Card(
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 28,
+                    vertical: 24,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.speed_rounded,
+                        size: 54,
+                        color: colorScheme.primary,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'BlueMeter Lite',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Lightweight BPSR DPS overlay — no PC required.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.10),
+                          border: Border.all(
+                            color: statusColor.withValues(alpha: 0.45),
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              statusIcon,
+                              size: 20,
+                              color: statusColor,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                clientStatus,
+                                style: TextStyle(
+                                  color: statusColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: _toggleService,
+                        icon: Icon(
+                          _isVpnRunning
+                              ? Icons.stop_circle_outlined
+                              : Icons.play_circle_outline_rounded,
+                        ),
+                        label: Text(
+                          _isVpnRunning
+                              ? 'Stop DPS Meter'
+                              : 'Start DPS Meter',
+                        ),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(250, 52),
+                          backgroundColor: _isVpnRunning
+                              ? colorScheme.error
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        _isVpnRunning
+                            ? 'The local VPN and overlay are active.'
+                            : 'Android will request overlay and VPN permission.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: _showAboutDialog,
+                        icon: const Icon(Icons.info_outline_rounded),
+                        label: const Text('About and privacy'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+"""
+    lite_home_tail = textwrap.dedent(lite_home_tail).lstrip()
+    dart = dart[:home_tail_start] + lite_home_tail.rstrip() + "\n}\n"
 
     main_dart.write_text(dart, encoding="utf-8")
 
@@ -592,7 +1141,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.10.1+14",
+        f"version: {lite_version_name}+{lite_version_code}",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")

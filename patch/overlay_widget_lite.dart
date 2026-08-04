@@ -19,14 +19,24 @@ class _OverlayWidgetState extends State<OverlayWidget> {
   static const double _maximumWidth = 1200;
   static const double _maximumHeight = 620;
 
+  static const String _prefMode = 'lite_overlay_mode';
+  static const String _prefWidth = 'lite_overlay_width';
+  static const String _prefHeight = 'lite_overlay_height';
+  static const String _prefX = 'lite_overlay_x';
+  static const String _prefY = 'lite_overlay_y';
+  static const String _prefLocked = 'lite_overlay_locked';
+
   List<Map<String, dynamic>> _players = const [];
   int _combatTime = 0;
   StreamSubscription? _overlaySubscription;
   _LiteViewMode _viewMode = _LiteViewMode.expanded;
+  bool _isLocked = false;
   int _lastResizeRequestMs = 0;
 
   double _windowX = 8;
   double _windowY = 80;
+  double _windowWidth = 360;
+  double _windowHeight = 180;
   Size? _resizeStartSize;
   Offset? _resizeStartPointer;
 
@@ -55,6 +65,9 @@ class _OverlayWidgetState extends State<OverlayWidget> {
 
     });
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreLayout();
+    });
   }
 
   @override
@@ -62,6 +75,76 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     _overlaySubscription?.cancel();
     super.dispose();
   }
+
+
+Future<void> _restoreLayout() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final savedMode = prefs.getString(_prefMode);
+    final mode = savedMode == 'compact'
+        ? _LiteViewMode.compact
+        : _LiteViewMode.expanded;
+
+    final minimumWidth = mode == _LiteViewMode.compact
+        ? _compactMinimumWidth
+        : _expandedMinimumWidth;
+    final minimumHeight = mode == _LiteViewMode.compact
+        ? _compactMinimumHeight
+        : _expandedMinimumHeight;
+    final defaultWidth = mode == _LiteViewMode.compact ? 180.0 : 360.0;
+    final defaultHeight = mode == _LiteViewMode.compact ? 80.0 : 180.0;
+
+    final width = (prefs.getDouble(_prefWidth) ?? defaultWidth)
+        .clamp(minimumWidth, _maximumWidth)
+        .toDouble();
+    final height = (prefs.getDouble(_prefHeight) ?? defaultHeight)
+        .clamp(minimumHeight, _maximumHeight)
+        .toDouble();
+    final x = (prefs.getDouble(_prefX) ?? 8.0)
+        .clamp(0.0, 10000.0)
+        .toDouble();
+    final y = (prefs.getDouble(_prefY) ?? 80.0)
+        .clamp(0.0, 10000.0)
+        .toDouble();
+    final locked = prefs.getBool(_prefLocked) ?? false;
+
+    if (!mounted) return;
+
+    setState(() {
+      _viewMode = mode;
+      _isLocked = locked;
+      _windowX = x;
+      _windowY = y;
+      _windowWidth = width;
+      _windowHeight = height;
+    });
+
+    await Future<void>.delayed(const Duration(milliseconds: 160));
+    await _resizeOverlay(width, height);
+    await FlutterOverlayWindow.moveOverlay(
+      OverlayPosition(_windowX, _windowY),
+    );
+  } catch (_) {
+    // Use the safe default layout when preferences are unavailable.
+  }
+}
+
+Future<void> _saveLayout() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _prefMode,
+      _viewMode == _LiteViewMode.compact ? 'compact' : 'expanded',
+    );
+    await prefs.setDouble(_prefWidth, _windowWidth);
+    await prefs.setDouble(_prefHeight, _windowHeight);
+    await prefs.setDouble(_prefX, _windowX);
+    await prefs.setDouble(_prefY, _windowY);
+    await prefs.setBool(_prefLocked, _isLocked);
+  } catch (_) {
+    // Persistence failure must never interrupt the live meter.
+  }
+}
 
   int get _activePlayerCount {
     return _players
@@ -193,6 +276,9 @@ Future<void> _resizeOverlay(double width, double height) async {
       .clamp(_minimumHeightForCurrentMode, _maximumHeight)
       .toInt();
 
+  _windowWidth = safeWidth.toDouble();
+  _windowHeight = safeHeight.toDouble();
+
   try {
     await FlutterOverlayWindow.resizeOverlay(
       safeWidth,
@@ -205,7 +291,7 @@ Future<void> _resizeOverlay(double width, double height) async {
 }
 
 
-void _toggleViewMode() {
+Future<void> _toggleViewMode() async {
   final nextMode = _viewMode == _LiteViewMode.compact
       ? _LiteViewMode.expanded
       : _LiteViewMode.compact;
@@ -215,15 +301,22 @@ void _toggleViewMode() {
   });
 
   if (nextMode == _LiteViewMode.compact) {
-    // Compact always begins at its true minimum size.
-    _resizeOverlay(
+    await _resizeOverlay(
       _compactMinimumWidth,
       _compactMinimumHeight,
     );
   } else {
-    // Expanded always begins at the requested minimum presentation size.
-    _resizeOverlay(360, 180);
+    await _resizeOverlay(360, 180);
   }
+
+  await _saveLayout();
+}
+
+Future<void> _toggleLock() async {
+  setState(() {
+    _isLocked = !_isLocked;
+  });
+  await _saveLayout();
 }
 
   void _moveWindow(DragUpdateDetails details) {
@@ -267,6 +360,7 @@ void _toggleViewMode() {
   void _finishManualResize(DragEndDetails details) {
     _resizeStartSize = null;
     _resizeStartPointer = null;
+    _saveLayout();
   }
 
   Widget _buildHeaderButton({
@@ -296,7 +390,8 @@ void _toggleViewMode() {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onPanUpdate: _moveWindow,
+      onPanUpdate: _isLocked ? null : _moveWindow,
+      onPanEnd: _isLocked ? null : (_) => _saveLayout(),
       child: Container(
         height: headerHeight,
         padding: const EdgeInsets.only(left: 9, right: 3),
@@ -379,6 +474,19 @@ void _toggleViewMode() {
                 ),
               ),
             ),
+_buildHeaderButton(
+  onTap: _toggleLock,
+  size: 23,
+  child: Icon(
+    _isLocked
+        ? Icons.lock_rounded
+        : Icons.lock_open_rounded,
+    size: (headerHeight * 0.48).clamp(13, 18).toDouble(),
+    color: _isLocked
+        ? const Color(0xFFFFD978)
+        : const Color(0xFFAAB2C2),
+  ),
+),
             _buildHeaderButton(
               onTap: _resetEncounter,
               child: Icon(
@@ -846,7 +954,9 @@ Widget _buildMeterBody({
             decoration: BoxDecoration(
               color: const Color(0xE6121418),
               border: Border.all(
-                color: const Color(0x663A86FF),
+                color: _isLocked
+                    ? const Color(0x88FFC857)
+                    : const Color(0x663A86FF),
                 width: 1,
               ),
               borderRadius: BorderRadius.circular(7),
@@ -882,32 +992,33 @@ Widget _buildMeterBody({
                     ),
                   ],
                 ),
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanStart: (details) =>
-                        _startManualResize(context, details),
-                    onPanUpdate: _updateManualResize,
-                    onPanEnd: _finishManualResize,
-                    child: SizedBox(
-                      width: (width * 0.055).clamp(20.0, 30.0).toDouble(),
-                      height: (height * 0.09).clamp(20.0, 30.0).toDouble(),
-                      child: Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: const EdgeInsets.all(3),
-                          child: Icon(
-                            Icons.south_east,
-                            size: 15,
-                            color: const Color(0x66FFFFFF),
+                if (!_isLocked)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanStart: (details) =>
+                          _startManualResize(context, details),
+                      onPanUpdate: _updateManualResize,
+                      onPanEnd: _finishManualResize,
+                      child: SizedBox(
+                        width: (width * 0.055).clamp(20.0, 30.0).toDouble(),
+                        height: (height * 0.09).clamp(20.0, 30.0).toDouble(),
+                        child: Align(
+                          alignment: Alignment.bottomRight,
+                          child: Padding(
+                            padding: const EdgeInsets.all(3),
+                            child: Icon(
+                              Icons.south_east,
+                              size: 15,
+                              color: const Color(0x66FFFFFF),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           );
