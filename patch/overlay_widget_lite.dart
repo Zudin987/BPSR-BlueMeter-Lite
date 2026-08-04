@@ -22,8 +22,8 @@ class OverlayWidget extends StatefulWidget {
 
 class _OverlayWidgetState extends State<OverlayWidget> {
   static const int _maxDisplayedPlayers = 20;
-  static const double _minimumWidth = 280;
-  static const double _maximumWidth = 900;
+  static const double _minimumWidth = 360;
+  static const double _maximumWidth = 1200;
   static const double _minimumHeight = 96;
   static const double _maximumHeight = 620;
 
@@ -128,28 +128,34 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     sendPort?.send('RESET');
   }
 
-  List<Map<String, dynamic>> _rankPlayers() {
-    final ranked = _players
-        .where((player) => ((player['total'] as num?) ?? 0) > 0)
-        .map((player) => Map<String, dynamic>.from(player))
-        .toList(growable: true)
-      ..sort((a, b) {
-        final aDps = ((a['dps'] as num?) ?? 0).toDouble();
-        final bDps = ((b['dps'] as num?) ?? 0).toDouble();
-        final dpsComparison = bDps.compareTo(aDps);
-        if (dpsComparison != 0) return dpsComparison;
 
-        final aName = (a['name'] as String?) ?? '';
-        final bName = (b['name'] as String?) ?? '';
-        return aName.compareTo(bName);
-      });
+List<Map<String, dynamic>> _rankPlayers() {
+  final ranked = _players
+      .where((player) => ((player['total'] as num?) ?? 0) > 0)
+      .map((player) => Map<String, dynamic>.from(player))
+      .toList(growable: true)
+    ..sort((a, b) {
+      final aTotal = ((a['total'] as num?) ?? 0).toDouble();
+      final bTotal = ((b['total'] as num?) ?? 0).toDouble();
+      final totalComparison = bTotal.compareTo(aTotal);
+      if (totalComparison != 0) return totalComparison;
 
-    for (var index = 0; index < ranked.length; index++) {
-      ranked[index]['_rank'] = index + 1;
-    }
+      final aDps = ((a['dps'] as num?) ?? 0).toDouble();
+      final bDps = ((b['dps'] as num?) ?? 0).toDouble();
+      final dpsComparison = bDps.compareTo(aDps);
+      if (dpsComparison != 0) return dpsComparison;
 
-    return ranked;
+      final aName = (a['name'] as String?) ?? '';
+      final bName = (b['name'] as String?) ?? '';
+      return aName.compareTo(bName);
+    });
+
+  for (var index = 0; index < ranked.length; index++) {
+    ranked[index]['_rank'] = index + 1;
   }
+
+  return ranked;
+}
 
   List<Map<String, dynamic>> _selectVisiblePlayers(
     List<Map<String, dynamic>> ranked,
@@ -198,39 +204,41 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     }
   }
 
-  _LiteOverlayPreset _presetForPlayerCount(int count) {
-    final safeCount = count.clamp(0, _maxDisplayedPlayers).toInt();
 
-    if (safeCount <= 5) {
-      final rows = safeCount == 0 ? 2 : safeCount;
-      final height = (42 + rows * 29).clamp(108, 192).toInt();
-      return _LiteOverlayPreset(400, height);
-    }
+_LiteOverlayPreset _presetForPlayerCount(int count) {
+  final safeCount = count.clamp(0, _maxDisplayedPlayers).toInt();
 
-    if (safeCount <= 10) {
-      final height = (42 + safeCount * 25).clamp(192, 292).toInt();
-      return _LiteOverlayPreset(460, height);
-    }
+  if (safeCount <= 5) {
+    final rows = safeCount == 0 ? 2 : safeCount;
+    final height = (38 + rows * 25).clamp(100, 164).toInt();
+    return _LiteOverlayPreset(540, height);
+  }
 
-    final rowsPerColumn = (safeCount + 1) ~/ 2;
-    final height = (42 + rowsPerColumn * 25).clamp(192, 292).toInt();
+  if (safeCount <= 10) {
+    final height = (38 + safeCount * 22).clamp(170, 258).toInt();
     return _LiteOverlayPreset(640, height);
   }
 
-  _LiteOverlayPreset _presetForMode(_LiteLayoutMode mode) {
-    switch (mode) {
-      case _LiteLayoutMode.compact:
-        return const _LiteOverlayPreset(400, 192);
-      case _LiteLayoutMode.party:
-        return const _LiteOverlayPreset(460, 292);
-      case _LiteLayoutMode.raid:
-        return const _LiteOverlayPreset(640, 292);
-      case _LiteLayoutMode.auto:
-        return _presetForPlayerCount(_activePlayerCount);
-      case _LiteLayoutMode.custom:
-        return const _LiteOverlayPreset(400, 192);
-    }
+  final rowsPerColumn = (safeCount + 1) ~/ 2;
+  final height = (38 + rowsPerColumn * 22).clamp(170, 258).toInt();
+  return _LiteOverlayPreset(980, height);
+}
+
+
+_LiteOverlayPreset _presetForMode(_LiteLayoutMode mode) {
+  switch (mode) {
+    case _LiteLayoutMode.compact:
+      return const _LiteOverlayPreset(540, 164);
+    case _LiteLayoutMode.party:
+      return const _LiteOverlayPreset(640, 258);
+    case _LiteLayoutMode.raid:
+      return const _LiteOverlayPreset(980, 258);
+    case _LiteLayoutMode.auto:
+      return _presetForPlayerCount(_activePlayerCount);
+    case _LiteLayoutMode.custom:
+      return const _LiteOverlayPreset(540, 164);
   }
+}
 
   void _scheduleAutoResize({bool immediate = false}) {
     if (_layoutMode != _LiteLayoutMode.auto) return;
@@ -457,240 +465,332 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     );
   }
 
-  Widget _buildPlayerRow({
-    required Map<String, dynamic> player,
-    required double maxDps,
-    required double rowHeight,
-    required double columnWidth,
-  }) {
-    final dps = ((player['dps'] as num?) ?? 0).toDouble();
-    final ratio = (dps / maxDps).clamp(0.0, 1.0).toDouble();
-    final isMe = player['isMe'] == true;
-    final rank = (player['_rank'] as int?) ?? 0;
-    final rawName = (player['name'] as String?)?.trim();
-    final displayName =
-        (rawName == null || rawName.isEmpty) ? 'Unknown' : rawName;
 
-    final fontSize = (rowHeight * 0.44).clamp(9.5, 14.0).toDouble();
-    final rankFontSize = (fontSize - 1).clamp(8.5, 12.0).toDouble();
-    final dpsFontSize = (fontSize + 0.2).clamp(9.7, 14.2).toDouble();
-    final rankWidth = (columnWidth * 0.075).clamp(20.0, 30.0).toDouble();
-    final dpsWidth = (columnWidth * 0.27).clamp(58.0, 94.0).toDouble();
+Color _classColor(String className) {
+  switch (className) {
+    case 'Stormblade':
+      return const Color(0xFF5A8DFF);
+    case 'Frost Mage':
+      return const Color(0xFF9D7BFF);
+    case 'Wind Knight':
+      return const Color(0xFF4EC7A7);
+    case 'Verdant Oracle':
+      return const Color(0xFF78C96B);
+    case 'Heavy Guardian':
+      return const Color(0xFFD99A55);
+    case 'Marksman':
+      return const Color(0xFFD9C25A);
+    case 'Shield Knight':
+      return const Color(0xFF788BD9);
+    case 'Soul Musician':
+      return const Color(0xFFD978B5);
+    default:
+      return const Color(0xFF6D8FC7);
+  }
+}
 
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: (columnWidth * 0.012).clamp(3.0, 7.0).toDouble(),
-        vertical: 1,
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(
+String _playerIdentity(Map<String, dynamic> player) {
+  final rawName = (player['name'] as String?)?.trim();
+  final name = (rawName == null || rawName.isEmpty) ? 'Unknown' : rawName;
+  final className = (player['className'] as String?)?.trim() ?? '';
+  final combatPower = ((player['combatPower'] as num?) ?? 0).toInt();
+  final seasonStrength =
+      ((player['seasonStrength'] as num?) ?? 0).toInt();
+
+  final ownerPrefix = player['isMe'] == true ? '★ ' : '';
+  final classPart =
+      className.isEmpty || className == 'Unknown' ? '' : ' — $className';
+
+  String scorePart = '';
+  if (combatPower > 0 || seasonStrength > 0) {
+    scorePart = ' ($combatPower+$seasonStrength)';
+  }
+
+  return '$ownerPrefix$name$classPart$scorePart';
+}
+
+String _formatContribution(double percentage) {
+  if (percentage <= 0) return '0%';
+  if (percentage < 1) return '${percentage.toStringAsFixed(1)}%';
+  return '${percentage.toStringAsFixed(0)}%';
+}
+
+Widget _buildPlayerRow({
+  required Map<String, dynamic> player,
+  required double maxTotal,
+  required double groupTotal,
+  required double rowHeight,
+  required double columnWidth,
+}) {
+  final total = ((player['total'] as num?) ?? 0).toDouble();
+  final dps = ((player['dps'] as num?) ?? 0).toDouble();
+  final ratio = (total / maxTotal).clamp(0.0, 1.0).toDouble();
+  final contribution =
+      groupTotal > 0 ? (total / groupTotal * 100.0) : 0.0;
+  final isMe = player['isMe'] == true;
+  final rank = (player['_rank'] as int?) ?? 0;
+  final className = (player['className'] as String?)?.trim() ?? '';
+  final classColor = _classColor(className);
+  final identity = _playerIdentity(player);
+
+  // Deliberately denser than v0.2 so 10–20 player groups remain readable.
+  final fontSize = (rowHeight * 0.40).clamp(8.4, 11.2).toDouble();
+  final rankFontSize = (fontSize - 0.5).clamp(8.0, 10.6).toDouble();
+  final metricFontSize = (fontSize + 0.1).clamp(8.5, 11.3).toDouble();
+  final rankWidth = (columnWidth * 0.065).clamp(24.0, 34.0).toDouble();
+  final metricWidth =
+      (columnWidth * 0.31).clamp(106.0, 174.0).toDouble();
+  final percentageWidth =
+      (columnWidth * 0.075).clamp(32.0, 48.0).toDouble();
+
+  return Padding(
+    padding: EdgeInsets.symmetric(
+      horizontal: (columnWidth * 0.008).clamp(2.0, 5.0).toDouble(),
+      vertical: 0.5,
+    ),
+    child: Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isMe
+                  ? const Color(0x2BFFC857)
+                  : const Color(0x121A1E27),
+              borderRadius: BorderRadius.circular(2.5),
+              border: isMe
+                  ? Border.all(
+                      color: const Color(0x88FFC857),
+                      width: 0.7,
+                    )
+                  : null,
+            ),
+          ),
+        ),
+        Positioned.fill(
+          child: FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: ratio,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: const Color(0x131A1E27),
-                borderRadius: BorderRadius.circular(3),
+                color: isMe
+                    ? classColor.withValues(alpha: 0.48)
+                    : classColor.withValues(alpha: 0.29),
+                borderRadius: BorderRadius.circular(2.5),
               ),
             ),
           ),
-          Positioned.fill(
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: ratio,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: isMe
-                      ? const Color(0x583A86FF)
-                      : const Color(0x293A86FF),
-                  borderRadius: BorderRadius.circular(3),
-                ),
+        ),
+        if (isMe)
+          Positioned(
+            left: 0,
+            top: 1,
+            bottom: 1,
+            child: Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFC857),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
-          if (isMe)
-            Positioned(
-              left: 0,
-              top: 2,
-              bottom: 2,
-              child: Container(
-                width: 2.5,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8AB4FF),
-                  borderRadius: BorderRadius.circular(2),
+        Padding(
+          padding: EdgeInsets.only(
+            left: isMe ? 6 : 4,
+            right: 4,
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: rankWidth,
+                child: Text(
+                  '${rank.toString().padLeft(2, '0')}.',
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: isMe
+                        ? const Color(0xFFFFD978)
+                        : const Color(0xFFB0B6C1),
+                    fontWeight: FontWeight.w700,
+                    fontSize: rankFontSize,
+                    height: 1,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
               ),
-            ),
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: (columnWidth * 0.014).clamp(4.0, 8.0).toDouble(),
-            ),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: rankWidth,
+              Expanded(
+                child: Text(
+                  identity,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isMe
+                        ? const Color(0xFFFFFFFF)
+                        : const Color(0xFFE1E4EA),
+                    fontWeight:
+                        isMe ? FontWeight.w800 : FontWeight.w600,
+                    fontSize: fontSize,
+                    height: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              SizedBox(
+                width: metricWidth,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
                   child: Text(
-                    '$rank',
+                    '${_formatNumber(total)} (${_formatNumber(dps)})',
                     maxLines: 1,
+                    textAlign: TextAlign.right,
                     style: TextStyle(
-                      color: isMe
-                          ? const Color(0xFFC9DCFF)
-                          : const Color(0xFF7F8796),
-                      fontWeight: isMe ? FontWeight.w700 : FontWeight.w500,
-                      fontSize: rankFontSize,
+                      color: const Color(0xFFF6F7F9),
+                      fontWeight: FontWeight.w700,
+                      fontSize: metricFontSize,
+                      height: 1,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ),
-                Expanded(
-                  child: Text(
-                    displayName,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isMe
-                          ? const Color(0xFFFFFFFF)
-                          : const Color(0xFFD6DBE5),
-                      fontWeight:
-                          isMe ? FontWeight.w800 : FontWeight.w600,
-                      fontSize: fontSize,
-                      height: 1,
-                    ),
+              ),
+              const SizedBox(width: 5),
+              SizedBox(
+                width: percentageWidth,
+                child: Text(
+                  _formatContribution(contribution),
+                  maxLines: 1,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: isMe
+                        ? const Color(0xFFFFD978)
+                        : const Color(0xFFC4CAD5),
+                    fontWeight: FontWeight.w700,
+                    fontSize: metricFontSize,
+                    height: 1,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-                const SizedBox(width: 5),
-                SizedBox(
-                  width: dpsWidth,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      _formatNumber(dps),
-                      maxLines: 1,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: const Color(0xFFFFFFFF),
-                        fontWeight: FontWeight.w800,
-                        fontSize: dpsFontSize,
-                        height: 1,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlayerList({
-    required List<Map<String, dynamic>> players,
-    required double maxDps,
-    required double rowHeight,
-    required double columnWidth,
-    required double availableHeight,
-  }) {
-    final contentHeight = rowHeight * players.length;
-    final shouldScroll = contentHeight > availableHeight + 1;
-
-    return RepaintBoundary(
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        physics: shouldScroll
-            ? const ClampingScrollPhysics()
-            : const NeverScrollableScrollPhysics(),
-        itemCount: players.length,
-        itemExtent: rowHeight,
-        itemBuilder: (context, index) {
-          return _buildPlayerRow(
-            player: players[index],
-            maxDps: maxDps,
-            rowHeight: rowHeight,
-            columnWidth: columnWidth,
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildMeterBody({
-    required BoxConstraints constraints,
-    required List<Map<String, dynamic>> visiblePlayers,
-    required double maxDps,
-  }) {
-    final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 400.0;
-    final height =
-        constraints.maxHeight.isFinite ? constraints.maxHeight : 150.0;
-    final useTwoColumns = visiblePlayers.length > 10 && width >= 540;
-    final rowsPerColumn = useTwoColumns
-        ? (visiblePlayers.length + 1) ~/ 2
-        : visiblePlayers.length;
-    final safeRowCount = rowsPerColumn == 0 ? 1 : rowsPerColumn;
-    final rowHeight =
-        (height / safeRowCount).clamp(19.0, 33.0).toDouble();
-
-    if (visiblePlayers.isEmpty) {
-      return Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            'Waiting for combat…',
-            style: TextStyle(
-              color: const Color(0xFF8B93A3),
-              fontWeight: FontWeight.w500,
-              fontSize: (height * 0.12).clamp(10.0, 14.0).toDouble(),
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (!useTwoColumns) {
-      return _buildPlayerList(
-        players: visiblePlayers,
-        maxDps: maxDps,
-        rowHeight: rowHeight,
-        columnWidth: width,
-        availableHeight: height,
-      );
-    }
-
-    final splitIndex = (visiblePlayers.length + 1) ~/ 2;
-    final leftPlayers =
-        visiblePlayers.sublist(0, splitIndex);
-    final rightPlayers =
-        visiblePlayers.sublist(splitIndex);
-
-    return Row(
-      children: [
-        Expanded(
-          child: _buildPlayerList(
-            players: leftPlayers,
-            maxDps: maxDps,
-            rowHeight: rowHeight,
-            columnWidth: width / 2,
-            availableHeight: height,
-          ),
-        ),
-        Container(
-          width: 1,
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          color: const Color(0x20FFFFFF),
-        ),
-        Expanded(
-          child: _buildPlayerList(
-            players: rightPlayers,
-            maxDps: maxDps,
-            rowHeight: rowHeight,
-            columnWidth: width / 2,
-            availableHeight: height,
+              ),
+            ],
           ),
         ),
       ],
+    ),
+  );
+}
+
+
+Widget _buildPlayerList({
+  required List<Map<String, dynamic>> players,
+  required double maxTotal,
+  required double groupTotal,
+  required double rowHeight,
+  required double columnWidth,
+  required double availableHeight,
+}) {
+  final contentHeight = rowHeight * players.length;
+  final shouldScroll = contentHeight > availableHeight + 1;
+
+  return RepaintBoundary(
+    child: ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
+      physics: shouldScroll
+          ? const ClampingScrollPhysics()
+          : const NeverScrollableScrollPhysics(),
+      itemCount: players.length,
+      itemExtent: rowHeight,
+      itemBuilder: (context, index) {
+        return _buildPlayerRow(
+          player: players[index],
+          maxTotal: maxTotal,
+          groupTotal: groupTotal,
+          rowHeight: rowHeight,
+          columnWidth: columnWidth,
+        );
+      },
+    ),
+  );
+}
+
+
+Widget _buildMeterBody({
+  required BoxConstraints constraints,
+  required List<Map<String, dynamic>> visiblePlayers,
+  required double maxTotal,
+  required double groupTotal,
+}) {
+  final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 540.0;
+  final height =
+      constraints.maxHeight.isFinite ? constraints.maxHeight : 130.0;
+  final useTwoColumns = visiblePlayers.length > 10 && width >= 780;
+  final rowsPerColumn = useTwoColumns
+      ? (visiblePlayers.length + 1) ~/ 2
+      : visiblePlayers.length;
+  final safeRowCount = rowsPerColumn == 0 ? 1 : rowsPerColumn;
+  final rowHeight =
+      (height / safeRowCount).clamp(18.0, 27.0).toDouble();
+
+  if (visiblePlayers.isEmpty) {
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          'Waiting for combat…',
+          style: TextStyle(
+            color: const Color(0xFF8B93A3),
+            fontWeight: FontWeight.w500,
+            fontSize: (height * 0.10).clamp(9.0, 12.0).toDouble(),
+          ),
+        ),
+      ),
     );
   }
+
+  if (!useTwoColumns) {
+    return _buildPlayerList(
+      players: visiblePlayers,
+      maxTotal: maxTotal,
+      groupTotal: groupTotal,
+      rowHeight: rowHeight,
+      columnWidth: width,
+      availableHeight: height,
+    );
+  }
+
+  final splitIndex = (visiblePlayers.length + 1) ~/ 2;
+  final leftPlayers = visiblePlayers.sublist(0, splitIndex);
+  final rightPlayers = visiblePlayers.sublist(splitIndex);
+
+  return Row(
+    children: [
+      Expanded(
+        child: _buildPlayerList(
+          players: leftPlayers,
+          maxTotal: maxTotal,
+          groupTotal: groupTotal,
+          rowHeight: rowHeight,
+          columnWidth: width / 2,
+          availableHeight: height,
+        ),
+      ),
+      Container(
+        width: 1,
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        color: const Color(0x20FFFFFF),
+      ),
+      Expanded(
+        child: _buildPlayerList(
+          players: rightPlayers,
+          maxTotal: maxTotal,
+          groupTotal: groupTotal,
+          rowHeight: rowHeight,
+          columnWidth: width / 2,
+          availableHeight: height,
+        ),
+      ),
+    ],
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -699,12 +799,17 @@ class _OverlayWidgetState extends State<OverlayWidget> {
       ranked,
       _visibleLimitForMode(),
     );
-    final maxDps = ranked.isEmpty
+    final maxTotal = ranked.isEmpty
         ? 1.0
-        : ((ranked.first['dps'] as num?) ?? 1)
+        : ((ranked.first['total'] as num?) ?? 1)
             .toDouble()
             .clamp(1.0, double.infinity)
             .toDouble();
+    final groupTotal = ranked.fold<double>(
+      0.0,
+      (sum, player) =>
+          sum + ((player['total'] as num?) ?? 0).toDouble(),
+    );
 
     return Material(
       color: Colors.transparent,
@@ -717,9 +822,9 @@ class _OverlayWidgetState extends State<OverlayWidget> {
               ? outerConstraints.maxHeight
               : 150.0;
           final headerHeight =
-              (height * 0.16).clamp(29.0, 38.0).toDouble();
+              (height * 0.16).clamp(27.0, 34.0).toDouble();
           final headerFontSize =
-              (headerHeight * 0.40).clamp(11.5, 15.0).toDouble();
+              (headerHeight * 0.38).clamp(10.0, 13.0).toDouble();
 
           return Container(
             decoration: BoxDecoration(
@@ -753,7 +858,8 @@ class _OverlayWidgetState extends State<OverlayWidget> {
                           return _buildMeterBody(
                             constraints: bodyConstraints,
                             visiblePlayers: visiblePlayers,
-                            maxDps: maxDps,
+                            maxTotal: maxTotal,
+                            groupTotal: groupTotal,
                           );
                         },
                       ),

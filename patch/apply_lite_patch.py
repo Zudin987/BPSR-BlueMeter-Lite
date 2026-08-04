@@ -276,6 +276,29 @@ def main() -> None:
         fail("could not locate overlay data bridge replacement boundaries")
 
     lite_data_bridge = r'''
+  String _liteClassName(int? professionId) {
+    switch (professionId) {
+      case 1:
+        return 'Stormblade';
+      case 2:
+        return 'Frost Mage';
+      case 4:
+        return 'Wind Knight';
+      case 5:
+        return 'Verdant Oracle';
+      case 9:
+        return 'Heavy Guardian';
+      case 11:
+        return 'Marksman';
+      case 12:
+        return 'Shield Knight';
+      case 13:
+        return 'Soul Musician';
+      default:
+        return 'Unknown';
+    }
+  }
+
   Future<void> _updateOverlay() async {
     final storage = DataStorage();
     storage.checkTimeout();
@@ -290,6 +313,9 @@ def main() -> None:
           return <String, dynamic>{
             'uid': uid.toString(),
             'name': info?.name ?? 'Unknown',
+            'className': _liteClassName(info?.professionId),
+            'combatPower': info?.combatPower ?? 0,
+            'seasonStrength': info?.seasonStrength ?? 0,
             'isMe': uid == storage.currentPlayerUuid,
             'dps': dpsData.simpleDps,
             'total': dpsData.totalAttackDamage.toInt(),
@@ -332,7 +358,7 @@ def main() -> None:
     dart = regex_once(
         dart,
         r"height:\s*400,\s*width:\s*600,",
-        "height: 108,\n      width: 400,",
+        "height: 100,\n      width: 540,",
         "overlay dimensions",
     )
     dart = replace_once(
@@ -354,7 +380,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.3.0+6",
+        "version: 1.4.0+7",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")

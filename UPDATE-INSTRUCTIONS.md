@@ -1,43 +1,40 @@
-# BlueMeter Lite v0.2 UI update
+# BlueMeter Lite v0.3 — ZDPS-style rows
 
-Replace these files in the GitHub repository:
+Replace these two files in the GitHub repository:
 
 - `patch/overlay_widget_lite.dart`
 - `patch/apply_lite_patch.py`
-- `README.md`
 
-Uploading either file under `patch/` triggers the APK workflow automatically.
+A commit under `patch/**` starts the APK build automatically.
 
-## New overlay behaviour
+## New row format
 
-- Auto mode is enabled by default.
-- 1–5 detected players: compact single-column window.
-- 6–10 detected players: larger party window.
-- 11–20 detected players: two-column raid window.
-- Auto height follows the number of active players, avoiding a large empty box
-  during solo testing.
-- Tap the `A / 5 / 10 / 20 / ↔` button to cycle Auto, Compact, Party, Raid,
-  and return from custom size.
-- Drag the bottom-right handle for arbitrary resizing.
-- Drag the header to move the overlay.
-- Font, row height, rank width, name width, and DPS width adapt to the actual
-  overlay dimensions.
-- Up to 20 players are shown. If more are parsed, the top players remain visible
-  and the local player is preserved even when outside the normal cut.
-- Narrow custom windows use a scrollable one-column list.
-- Wide raid windows use two columns to avoid 20 tiny rows.
-- No blur, animation, icons per player, skill details, or charts were added.
+`★ Username — Class (Ability Score+Season Strength)    Total Damage (DPS)    Share%`
 
-## Design references
+Example:
 
-The layout follows common damage-meter patterns:
+`01. ★ MrHard — Frost Mage (49632+2250)    101.31K (12.39K)    95%`
 
-- proportional background bars
-- fixed right-aligned tabular DPS values
-- highlighted local player
-- compact number formatting
-- adjustable visible-player count
-- responsive layouts for party and raid sizes
+## Behaviour
 
-The implementation stays intentionally DPS-only to retain the Lite project's
-low CPU, memory, and battery goals.
+- Rankings and bars are based on total damage.
+- DPS is shown in parentheses after total damage.
+- Contribution percentage uses total party/raid damage.
+- Class comes from `professionId`.
+- Ability Score uses `combatPower`.
+- Illusion Breaking season strength uses `seasonStrength`.
+- The local/owner player gets:
+  - a gold star
+  - a gold outline and left marker
+  - brighter text
+  - guaranteed visibility when outside the normal top cut
+- Class-colored bars are used without loading icons.
+- Font and rows are denser than v0.2.
+- Auto widths are larger so the class, score, total, DPS, and percentage fit:
+  - 1–5 players: 540 px
+  - 6–10 players: 640 px
+  - 11–20 players: 980 px in two columns
+
+## APK version
+
+`1.4.0+7`
