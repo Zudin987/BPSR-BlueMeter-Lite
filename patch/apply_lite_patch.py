@@ -41,8 +41,8 @@ def main() -> None:
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
 
-    lite_version_name = "1.11.0"
-    lite_version_code = 15
+    lite_version_name = "1.11.1"
+    lite_version_code = 16
 
     upstream_commit_file = upstream / "UPSTREAM_COMMIT.txt"
     if upstream_commit_file.exists():
@@ -194,6 +194,13 @@ def main() -> None:
         'android:label="BlueMeter Mobile"',
         'android:label="BlueMeter Lite"',
         "Android application label",
+    )
+    manifest_text = replace_once(
+        manifest_text,
+        'android:windowSoftInputMode="adjustResize">',
+        'android:windowSoftInputMode="adjustResize"\n'
+        '            android:screenOrientation="portrait">',
+        "portrait MainActivity orientation",
     )
     manifest_text = replace_once(
         manifest_text,
@@ -490,6 +497,21 @@ def main() -> None:
     for import_line in imports_to_remove:
         dart = dart.replace(import_line, "")
 
+
+    dart = replace_once(
+        dart,
+        """  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);""",
+        """  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);""",
+        "portrait main-app orientation",
+    )
+
+
     dart = regex_once(
         dart,
         r"\s*await MonsterNameService\(\)\.load\(\);\s*"
@@ -712,24 +734,77 @@ def main() -> None:
         'overlayContent: "Lite DPS Meter Active"',
     )
 
-    dart = regex_once(
-        dart,
-        r"height:\s*400,\s*width:\s*600,",
-        "height: 180,\n      width: 360,",
-        "overlay dimensions",
+    overlay_start_method = dart.find(
+        "  Future<void> _startOverlay() async {",
+        home_state_start,
     )
-    dart = regex_once(
-        dart,
-        (
-            r"\s*// Move to a safe initial position \(logical pixels\)\s*"
-            r"await Future\.delayed\("
-            r"const Duration\(milliseconds:\s*100\)\);\s*"
-            r"await FlutterOverlayWindow\.moveOverlay\(\s*"
-            r"const OverlayPosition\(0,\s*100\),\s*"
-            r"\);\s*"
-        ),
-        "\n",
-        "legacy initial overlay move",
+    overlay_end_method = dart.find(
+        "  Future<void> _startVpn() async {",
+        overlay_start_method,
+    )
+    if (
+        overlay_start_method == -1
+        or overlay_end_method == -1
+        or overlay_end_method <= overlay_start_method
+    ):
+        fail("could not locate overlay startup method")
+
+    lite_start_overlay = r"""
+  Future<bool> _startOverlay() async {
+    try {
+      if (!await FlutterOverlayWindow.isPermissionGranted()) {
+        await FlutterOverlayWindow.requestPermission();
+      }
+
+      if (!await FlutterOverlayWindow.isPermissionGranted()) {
+        return false;
+      }
+
+      // isActive() can remain true for a stale or invisible overlay engine.
+      // Always recreate the window so Start is a reliable recovery action.
+      if (await FlutterOverlayWindow.isActive()) {
+        await FlutterOverlayWindow.closeOverlay();
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+
+      await FlutterOverlayWindow.showOverlay(
+        enableDrag: false,
+        overlayTitle: 'BlueMeter Lite',
+        overlayContent: 'Lite DPS Meter Active',
+        flag: OverlayFlag.defaultFlag,
+        alignment: OverlayAlignment.topLeft,
+        visibility: NotificationVisibility.visibilityPublic,
+        positionGravity: PositionGravity.none,
+        height: 180,
+        width: 360,
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      if (!await FlutterOverlayWindow.isActive()) {
+        return false;
+      }
+
+      // First make the window visibly recoverable. The overlay isolate then
+      // restores its saved, screen-clamped layout after it is fully attached.
+      await FlutterOverlayWindow.moveOverlay(
+        const OverlayPosition(8, 80),
+      );
+      return true;
+    } catch (error) {
+      _logger.error(
+        'Failed to start overlay',
+        error: error,
+      );
+      return false;
+    }
+  }
+
+"""
+    dart = (
+        dart[:overlay_start_method]
+        + textwrap.dedent(lite_start_overlay)
+        + dart[overlay_end_method:]
     )
 
 
@@ -970,7 +1045,20 @@ def main() -> None:
       return;
     }
 
-    await _startOverlay();
+    final overlayStarted = await _startOverlay();
+    if (!overlayStarted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not open the overlay. Check Display over other apps permission.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     await _startVpn();
   }
 

@@ -94,17 +94,37 @@ Future<void> _restoreLayout() async {
     final defaultWidth = mode == _LiteViewMode.compact ? 180.0 : 360.0;
     final defaultHeight = mode == _LiteViewMode.compact ? 80.0 : 180.0;
 
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    final view = views.isNotEmpty ? views.first : null;
+    final logicalWidth = view == null
+        ? _maximumWidth
+        : view.physicalSize.width / view.devicePixelRatio;
+    final logicalHeight = view == null
+        ? _maximumHeight
+        : view.physicalSize.height / view.devicePixelRatio;
+
+    final allowedMaximumWidth = logicalWidth < _maximumWidth
+        ? logicalWidth
+        : _maximumWidth;
+    final allowedMaximumHeight = logicalHeight < _maximumHeight
+        ? logicalHeight
+        : _maximumHeight;
+
     final width = (prefs.getDouble(_prefWidth) ?? defaultWidth)
-        .clamp(minimumWidth, _maximumWidth)
+        .clamp(minimumWidth, allowedMaximumWidth)
         .toDouble();
     final height = (prefs.getDouble(_prefHeight) ?? defaultHeight)
-        .clamp(minimumHeight, _maximumHeight)
+        .clamp(minimumHeight, allowedMaximumHeight)
         .toDouble();
+
+    final maximumX = logicalWidth > width ? logicalWidth - width : 0.0;
+    final maximumY = logicalHeight > height ? logicalHeight - height : 0.0;
+
     final x = (prefs.getDouble(_prefX) ?? 8.0)
-        .clamp(0.0, 10000.0)
+        .clamp(0.0, maximumX)
         .toDouble();
     final y = (prefs.getDouble(_prefY) ?? 80.0)
-        .clamp(0.0, 10000.0)
+        .clamp(0.0, maximumY)
         .toDouble();
     final locked = prefs.getBool(_prefLocked) ?? false;
 
@@ -119,13 +139,16 @@ Future<void> _restoreLayout() async {
       _windowHeight = height;
     });
 
-    await Future<void>.delayed(const Duration(milliseconds: 160));
+    // The main isolate first creates a visible window at a safe position.
+    // Restore only after the Android overlay service has fully attached.
+    await Future<void>.delayed(const Duration(milliseconds: 650));
     await _resizeOverlay(width, height);
     await FlutterOverlayWindow.moveOverlay(
       OverlayPosition(_windowX, _windowY),
     );
+    await _saveLayout();
   } catch (_) {
-    // Use the safe default layout when preferences are unavailable.
+    // Keep the safe visible startup layout when restoration fails.
   }
 }
 
@@ -320,8 +343,28 @@ Future<void> _toggleLock() async {
 }
 
   void _moveWindow(DragUpdateDetails details) {
-    _windowX = (_windowX + details.delta.dx).clamp(0.0, 10000.0);
-    _windowY = (_windowY + details.delta.dy).clamp(0.0, 10000.0);
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    final view = views.isNotEmpty ? views.first : null;
+    final logicalWidth = view == null
+        ? _maximumWidth
+        : view.physicalSize.width / view.devicePixelRatio;
+    final logicalHeight = view == null
+        ? _maximumHeight
+        : view.physicalSize.height / view.devicePixelRatio;
+
+    final maximumX = logicalWidth > _windowWidth
+        ? logicalWidth - _windowWidth
+        : 0.0;
+    final maximumY = logicalHeight > _windowHeight
+        ? logicalHeight - _windowHeight
+        : 0.0;
+
+    _windowX = (_windowX + details.delta.dx)
+        .clamp(0.0, maximumX)
+        .toDouble();
+    _windowY = (_windowY + details.delta.dy)
+        .clamp(0.0, maximumY)
+        .toDouble();
 
     FlutterOverlayWindow.moveOverlay(
       OverlayPosition(_windowX, _windowY),
