@@ -29,11 +29,13 @@ The game continues communicating with its original servers. BlueMeter Lite forwa
 
 ## Storage
 
-The app focuses on the current live encounter and does not provide a cloud combat-history database.
+The app stores lightweight encounter summaries locally on the phone so users can review DPS, Healing and Tanking data in the control app. These summaries can include player names, specializations, totals, per-second values, scene information and encounter timing.
 
-Overlay mode, size, position and lock state are stored locally on the phone so the layout can be restored.
+Encounter history is not uploaded or synchronized. Entries older than seven days are deleted automatically, and users can delete individual entries or all history manually.
 
-Temporary combat values can remain in memory while the app and meter service are running.
+Overlay mode, selected meter, size, position, movement lock and auto-reset lock are also stored locally so the layout can be restored.
+
+Temporary live combat values can remain in memory while the app and meter service are running.
 
 ## Android permissions
 

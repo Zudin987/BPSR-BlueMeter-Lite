@@ -4,13 +4,13 @@ BlueMeter Lite is maintained as a patch kit on top of BlueMeter Mobile.
 
 ## Reproducible inputs
 
-The v1.2.0 build is pinned to:
+The v1.3.0 build is pinned to:
 
 ```text
 BlueMeter Mobile: 3c9d757cc0fd67971faf18447638c08044fb9b7c
 Flutter:          3.44.7
 Java:             17
-App version:      1.2.0+19
+App version:      1.3.0+20
 ```
 
 The workflow checks out the exact upstream commit rather than whatever happens to be the latest `main` branch.
@@ -35,17 +35,17 @@ Use **Actions → Publish BlueMeter Lite Release → Run workflow** only after c
 The release workflow defaults to:
 
 ```text
-Tag:        v1.2.0
+Tag:        v1.3.0
 Draft:      true
 Prerelease: false
 ```
 
 It creates permanent Release assets:
 
-- `BlueMeter-Lite-v1.2.0-arm64-v8a.apk`
-- `BlueMeter-Lite-v1.2.0-armeabi-v7a.apk`
-- `BlueMeter-Lite-v1.2.0-x86_64.apk`
-- `BlueMeter-Lite-v1.2.0-source.zip`
+- `BlueMeter-Lite-v1.3.0-arm64-v8a.apk`
+- `BlueMeter-Lite-v1.3.0-armeabi-v7a.apk`
+- `BlueMeter-Lite-v1.3.0-x86_64.apk`
+- `BlueMeter-Lite-v1.3.0-source.zip`
 - `SHA256SUMS.txt`
 - `SIGNING-CERT-SHA256.txt`
 

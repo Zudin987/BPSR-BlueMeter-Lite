@@ -34,6 +34,29 @@ def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
     return updated
 
 
+def replace_between(
+    text: str,
+    start: str,
+    end: str,
+    replacement: str,
+    label: str,
+) -> str:
+    start_index = text.find(start)
+    if start_index == -1:
+        fail(f"could not find start of {label}")
+
+    end_index = text.find(end, start_index)
+    if end_index == -1:
+        fail(f"could not find end of {label}")
+
+    return (
+        text[:start_index]
+        + textwrap.dedent(replacement).rstrip()
+        + "\n\n"
+        + text[end_index:]
+    )
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         fail("usage: apply_lite_patch.py <upstream-directory>")
@@ -41,8 +64,8 @@ def main() -> None:
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
 
-    lite_version_name = "1.2.0"
-    lite_version_code = 19
+    lite_version_name = "1.3.0"
+    lite_version_code = 20
 
     upstream_commit_file = upstream / "UPSTREAM_COMMIT.txt"
     if upstream_commit_file.exists():
@@ -80,6 +103,14 @@ def main() -> None:
         upstream
         / "lib/core/analyze/processors/sync_near_entities_processor.dart"
     )
+    encounter_history_service = (
+        upstream
+        / "lib/core/services/encounter_history_service.dart"
+    )
+    encounter_history_view = (
+        upstream
+        / "lib/views/encounter_history_view.dart"
+    )
     icon_patch_root = patch_dir / "android_icons"
 
     for required in (
@@ -100,6 +131,14 @@ def main() -> None:
             fail(f"missing upstream file: {required}")
 
     shutil.copyfile(patch_dir / "TcpProxy.kt", tcp_proxy)
+    shutil.copyfile(
+        patch_dir / "encounter_history_service.dart",
+        encounter_history_service,
+    )
+    shutil.copyfile(
+        patch_dir / "encounter_history_view.dart",
+        encounter_history_view,
+    )
 
 
     activity_text = main_activity.read_text(encoding="utf-8")
@@ -423,6 +462,25 @@ def main() -> None:
     # Skill, target, timeline, overheal, mitigation, and death breakdowns stay
     # disabled to preserve the Lite app's low memory and CPU overhead.
     storage_text = data_storage.read_text(encoding="utf-8")
+    storage_text = replace_once(
+        storage_text,
+        "import 'package:fixnum/fixnum.dart';\n",
+        (
+            "import 'dart:async';\n"
+            "import 'dart:math' as math;\n\n"
+            "import 'package:fixnum/fixnum.dart';\n"
+        ),
+        "Lite encounter utility imports",
+    )
+    storage_text = replace_once(
+        storage_text,
+        "import '../services/database_service.dart';\n",
+        (
+            "import '../services/database_service.dart';\n"
+            "import '../services/encounter_history_service.dart';\n"
+        ),
+        "Lite encounter history import",
+    )
     damage_start = storage_text.find("  void addDamage(")
     healing_start = storage_text.find("  void addHealing(")
     reset_start = storage_text.find("  void reset(")
@@ -574,6 +632,7 @@ def main() -> None:
     targetData.liteTakenStartTick ??= tick;
     targetData.liteTakenLastTick = tick;
 
+    _liteMarkBossEngaged(targetUid);
     _scheduleNotify();
   }
 
@@ -604,6 +663,676 @@ def main() -> None:
         + textwrap.dedent(lite_combat_methods)
         + storage_text[reset_start:]
     )
+
+    # Add lightweight automatic encounter splitting and history.
+    lite_scene_and_state = r"""
+static const String _liteAutoResetPreference =
+    'lite_auto_reset_locked';
+
+bool _liteAutoResetLocked = false;
+bool get liteAutoResetLocked => _liteAutoResetLocked;
+
+String _liteLastResetReason = '';
+String get liteLastResetReason => _liteLastResetReason;
+
+int _liteEncounterPhase = 1;
+int get liteEncounterPhase => _liteEncounterPhase;
+
+DateTime? _liteLastAutoSplitAt;
+DateTime? _litePlayerDeathAt;
+Map<String, double>? _litePlayerDeathPosition;
+bool _litePlayerRevived = false;
+bool _liteBossResetAfterDeath = false;
+
+Int64? _liteBossUid;
+Int64 _liteBossMaxHp = Int64.ZERO;
+int? _liteBossTemplateId;
+String _liteBossName = '';
+double _liteBossLowestHpRatio = 1.0;
+bool _liteBossEngaged = false;
+
+bool get _liteHasEncounterData {
+  return _fullDpsDatas.values.any((data) {
+    return data.totalAttackDamage.toInt() > 0 ||
+        data.totalHeal.toInt() > 0 ||
+        data.totalTakenDamage.toInt() > 0;
+  });
+}
+
+bool get _liteInsideDungeon {
+  return _mapId > 0 && _lineId == 0;
+}
+
+void initializeLiteEncounterState() {
+  SharedPreferences.getInstance().then((prefs) {
+    _liteAutoResetLocked =
+        prefs.getBool(_liteAutoResetPreference) ?? false;
+    _scheduleNotify();
+  });
+
+  unawaited(EncounterHistoryService().deleteExpired());
+}
+
+void setLiteAutoResetLocked(bool value) {
+  if (_liteAutoResetLocked == value) return;
+
+  _liteAutoResetLocked = value;
+  SharedPreferences.getInstance().then((prefs) {
+    return prefs.setBool(_liteAutoResetPreference, value);
+  });
+  _scheduleNotify();
+}
+
+String _liteBaseProfessionName(int? professionId) {
+  return switch (professionId) {
+    1 => 'Stormblade',
+    2 => 'Frost Mage',
+    3 => 'Twin Striker',
+    4 => 'Wind Knight',
+    5 => 'Verdant Oracle',
+    8 => 'Dorothy',
+    9 => 'Heavy Guardian',
+    10 => 'Dark Spirit Dance Ritual Blade',
+    11 => 'Marksman',
+    12 => 'Shield Knight',
+    13 => 'Beat Performer',
+    14 => 'Lucy',
+    15 => 'Natsu',
+    _ => 'Unknown',
+  };
+}
+
+Map<String, dynamic>? _liteBuildEncounterSnapshot(
+  String reason,
+) {
+  if (!_liteHasEncounterData) return null;
+
+  final endedAt = DateTime.now();
+  final startedAt = _combatStartTime ?? endedAt;
+  final durationSeconds = endedAt
+      .difference(startedAt)
+      .inSeconds
+      .clamp(0, 86400)
+      .toInt();
+
+  final players = _fullDpsDatas.entries
+      .where((entry) => _playerInfoDatas.containsKey(entry.key))
+      .map((entry) {
+        final uid = entry.key;
+        final data = entry.value;
+        final info = _playerInfoDatas[uid]!;
+
+        return <String, dynamic>{
+          'uid': uid.toString(),
+          'name': info.name ?? 'Unknown',
+          'className':
+              _liteSubProfessionNames[uid] ??
+                  _liteBaseProfessionName(info.professionId),
+          'professionId': info.professionId ?? 0,
+          'combatPower': info.combatPower ?? 0,
+          'illusionBreakingStrength':
+              info.seasonStrength ?? 0,
+          'isMe': uid == _currentPlayerUuid,
+          'totalDamage': data.totalAttackDamage.toInt(),
+          'dps': data.liteDps,
+          'totalHealing': data.totalHeal.toInt(),
+          'hps': data.liteHps,
+          'totalTaken': data.totalTakenDamage.toInt(),
+          'takenDps': data.liteTakenDps,
+        };
+      })
+      .where((player) {
+        return (player['totalDamage'] as int) > 0 ||
+            (player['totalHealing'] as int) > 0 ||
+            (player['totalTaken'] as int) > 0;
+      })
+      .toList(growable: false);
+
+  if (players.isEmpty) return null;
+
+  return <String, dynamic>{
+    'startedAt': startedAt.millisecondsSinceEpoch,
+    'endedAt': endedAt.millisecondsSinceEpoch,
+    'durationSeconds': durationSeconds,
+    'reason': reason,
+    'mapId': _mapId,
+    'channelId': _channelId,
+    'lineId': _lineId,
+    'phase': _liteEncounterPhase,
+    'bossName': _liteBossName,
+    'players': players,
+  };
+}
+
+void _liteResetDetectionState() {
+  _litePlayerDeathAt = null;
+  _litePlayerDeathPosition = null;
+  _litePlayerRevived = false;
+  _liteBossResetAfterDeath = false;
+
+  _liteBossUid = null;
+  _liteBossMaxHp = Int64.ZERO;
+  _liteBossTemplateId = null;
+  _liteBossName = '';
+  _liteBossLowestHpRatio = 1.0;
+  _liteBossEngaged = false;
+}
+
+void _liteClearEncounterData() {
+  _fullDpsDatas.clear();
+  _liteSubProfessionNames.clear();
+  _combatStartTime = null;
+  _lastActionTime = null;
+  _isCombatActive = false;
+  _liteResetDetectionState();
+  notifyListeners();
+}
+
+bool finishLiteEncounter(
+  String reason, {
+  bool manual = false,
+}) {
+  if (!manual && _liteAutoResetLocked) {
+    return false;
+  }
+
+  final snapshot = _liteBuildEncounterSnapshot(reason);
+  if (snapshot != null) {
+    unawaited(
+      EncounterHistoryService().saveEncounter(snapshot),
+    );
+  }
+
+  _liteLastResetReason = reason;
+
+  if (reason == 'new_phase') {
+    _liteEncounterPhase += 1;
+  } else {
+    _liteEncounterPhase = 1;
+  }
+
+  _liteClearEncounterData();
+  return true;
+}
+
+bool _liteRequestAutoSplit(String reason) {
+  if (_liteAutoResetLocked || !_liteHasEncounterData) {
+    return false;
+  }
+
+  final now = DateTime.now();
+  final lastSplit = _liteLastAutoSplitAt;
+  if (
+    lastSplit != null &&
+    now.difference(lastSplit) <
+        const Duration(milliseconds: 1800)
+  ) {
+    return false;
+  }
+
+  _liteLastAutoSplitAt = now;
+  return finishLiteEncounter(reason);
+}
+
+double _litePositionDistance(
+  Map<String, double> left,
+  Map<String, double> right,
+) {
+  final dx = (left['x'] ?? 0) - (right['x'] ?? 0);
+  final dy = (left['y'] ?? 0) - (right['y'] ?? 0);
+  final dz = (left['z'] ?? 0) - (right['z'] ?? 0);
+  return math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+bool get _liteRecentPlayerDeath {
+  final deathAt = _litePlayerDeathAt;
+  if (deathAt == null) return false;
+
+  return DateTime.now().difference(deathAt) <
+      const Duration(seconds: 45);
+}
+
+void _liteTryConfirmWipe() {
+  if (
+    _liteAutoResetLocked ||
+    !_litePlayerRevived ||
+    !_liteRecentPlayerDeath ||
+    !_liteHasEncounterData
+  ) {
+    return;
+  }
+
+  final currentPosition =
+      _playerInfoDatas[_currentPlayerUuid]?.position;
+  final deathPosition = _litePlayerDeathPosition;
+
+  final teleported =
+      currentPosition != null &&
+      deathPosition != null &&
+      _litePositionDistance(
+            currentPosition,
+            deathPosition,
+          ) >=
+          10.0;
+
+  if (teleported || _liteBossResetAfterDeath) {
+    _liteRequestAutoSplit('wipe');
+  }
+}
+
+bool _liteIsBossCandidate(Int64 maxHp) {
+  if (maxHp <= Int64.ZERO || !_liteInsideDungeon) {
+    return false;
+  }
+
+  final ownMaxHp =
+      _playerInfoDatas[_currentPlayerUuid]?.maxHp ??
+      Int64.ZERO;
+  final threshold = ownMaxHp > Int64.ZERO
+      ? Int64(ownMaxHp.toInt() * 10)
+      : Int64(2000000);
+
+  return maxHp >= threshold;
+}
+
+void _liteConsiderBoss(Int64 uid, Int64 maxHp) {
+  final monster = _monsterInfoDatas[uid];
+  if (
+    monster == null ||
+    monster.isSummon ||
+    !_liteIsBossCandidate(maxHp)
+  ) {
+    return;
+  }
+
+  final oldBossUid = _liteBossUid;
+  final shouldSplitForNewBoss =
+      oldBossUid != null &&
+      oldBossUid != uid &&
+      _liteBossEngaged &&
+      _liteHasEncounterData;
+
+  final shouldSplitTrashToBoss =
+      oldBossUid == null &&
+      _liteHasEncounterData &&
+      _combatStartTime != null &&
+      DateTime.now().difference(_combatStartTime!) >
+          const Duration(seconds: 3);
+
+  if (shouldSplitForNewBoss || shouldSplitTrashToBoss) {
+    _liteRequestAutoSplit('new_phase');
+  }
+
+  _liteBossUid = uid;
+  _liteBossMaxHp = maxHp;
+  _liteBossTemplateId = monster.templateId;
+  _liteBossName = monster.name ?? '';
+  _liteBossLowestHpRatio = 1.0;
+  _liteBossEngaged = false;
+}
+
+void _liteMarkBossEngaged(Int64 targetUid) {
+  if (_liteBossUid == targetUid) {
+    _liteBossEngaged = true;
+  }
+}
+
+void _liteObserveBossHp(
+  Int64 uid,
+  Int64? oldHp,
+  Int64 newHp,
+) {
+  if (
+    _liteBossUid != uid ||
+    _liteBossMaxHp <= Int64.ZERO
+  ) {
+    return;
+  }
+
+  final newRatio =
+      newHp.toDouble() / _liteBossMaxHp.toDouble();
+  final oldRatio = oldHp == null
+      ? newRatio
+      : oldHp.toDouble() / _liteBossMaxHp.toDouble();
+
+  if (newRatio < _liteBossLowestHpRatio) {
+    _liteBossLowestHpRatio = newRatio;
+  }
+
+  final resetToFull =
+      _liteBossEngaged &&
+      oldRatio < 0.70 &&
+      newRatio > 0.93 &&
+      newRatio - oldRatio > 0.25;
+
+  if (!resetToFull) return;
+
+  final bossTemplateId = _liteBossTemplateId;
+  final bossName = _liteBossName;
+  final bossMaxHp = _liteBossMaxHp;
+
+  if (_liteRecentPlayerDeath) {
+    _liteBossResetAfterDeath = true;
+    _liteTryConfirmWipe();
+    return;
+  }
+
+  if (_liteRequestAutoSplit('new_phase')) {
+    _liteBossUid = uid;
+    _liteBossMaxHp = bossMaxHp;
+    _liteBossTemplateId = bossTemplateId;
+    _liteBossName = bossName;
+    _liteBossLowestHpRatio = newRatio;
+    _liteBossEngaged = false;
+  }
+}
+
+/// Scene, line, and channel changes are direct packet signals.
+/// Wipe and phase detection use conservative player/boss-state rules
+/// because BlueMeter Mobile does not decode ZDPS's objective stream.
+void onSceneUpdate({
+  int? lineId,
+  int? mapId,
+  int? channelId,
+}) {
+  final oldLineId = _lineId;
+  final oldMapId = _mapId;
+  final oldChannelId = _channelId;
+
+  final lineChanged =
+      lineId != null &&
+      lineId > 0 &&
+      oldLineId > 0 &&
+      oldLineId != lineId;
+  final mapChanged =
+      mapId != null &&
+      mapId > 0 &&
+      oldMapId > 0 &&
+      oldMapId != mapId;
+  final channelChanged =
+      channelId != null &&
+      channelId > 0 &&
+      oldChannelId > 0 &&
+      oldChannelId != channelId;
+  final dungeonEntry =
+      (lineId == null || lineId == 0) &&
+      oldLineId > 0;
+
+  if (mapId != null && mapId > 0) {
+    _mapId = mapId;
+  }
+  if (channelId != null && channelId > 0) {
+    _channelId = channelId;
+  }
+  if (lineId != null && lineId > 0) {
+    _lineId = lineId;
+  }
+  if (dungeonEntry) {
+    _lineId = 0;
+  }
+
+  String? splitReason;
+  if (dungeonEntry) {
+    splitReason = 'new_dungeon';
+  } else if (mapChanged) {
+    splitReason = 'map_change';
+  } else if (channelChanged) {
+    splitReason = 'channel_change';
+  } else if (lineChanged) {
+    splitReason = 'line_change';
+  }
+
+  if (splitReason == null) return;
+
+  if (!_liteAutoResetLocked) {
+    _liteRequestAutoSplit(splitReason);
+    _playerInfoDatas.removeWhere(
+      (uid, _) => uid != _currentPlayerUuid,
+    );
+  }
+
+  _monsterInfoDatas.clear();
+  _deadMonsters.clear();
+  _liteResetDetectionState();
+  notifyListeners();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  /// Called when SyncContainerData provides scene info.",
+        "  void clearMonsters() {",
+        lite_scene_and_state,
+        "Lite scene and encounter state",
+    )
+
+    lite_action_method = r"""
+void _onAction() {
+  final now = DateTime.now();
+
+  // Keep the current encounter across ordinary combat downtime. A real
+  // scene, wipe, phase, or manual event decides when the totals are split.
+  if (!_isCombatActive) {
+    _isCombatActive = true;
+    _combatStartTime ??= now;
+  }
+
+  _lastActionTime = now;
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void _onAction() {",
+        "  Map<Int64, PlayerInfo> get playerInfoDatas",
+        lite_action_method,
+        "Lite encounter action method",
+    )
+
+    lite_reset_method = r"""
+void reset({bool resetTimer = true}) {
+  _fullDpsDatas.clear();
+  _liteSubProfessionNames.clear();
+
+  if (resetTimer) {
+    _combatStartTime = null;
+    _lastActionTime = null;
+    _isCombatActive = false;
+    _liteResetDetectionState();
+    _liteEncounterPhase = 1;
+  }
+
+  notifyListeners();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void reset({bool resetTimer = true}) {",
+        "  // --- Player Info Setters ---",
+        lite_reset_method,
+        "Lite reset method",
+    )
+
+    lite_player_hp = r"""
+void setPlayerHp(Int64 uid, int value) {
+  ensurePlayer(uid);
+
+  final info = _playerInfoDatas[uid]!;
+  final oldValue = info.hp?.toInt();
+  info.hp = Int64(value);
+
+  if (uid == _currentPlayerUuid && _liteHasEncounterData) {
+    final died =
+        value <= 0 &&
+        (oldValue == null || oldValue > 0);
+
+    if (died) {
+      _litePlayerDeathAt = DateTime.now();
+      _litePlayerDeathPosition =
+          info.position == null
+              ? null
+              : Map<String, double>.from(info.position!);
+      _litePlayerRevived = false;
+      _liteBossResetAfterDeath = false;
+    }
+
+    final revived =
+        value > 0 &&
+        oldValue != null &&
+        oldValue <= 0 &&
+        _liteRecentPlayerDeath;
+
+    if (revived) {
+      _litePlayerRevived = true;
+      _liteTryConfirmWipe();
+    }
+  }
+
+  _scheduleNotify();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void setPlayerHp(Int64 uid, int value) {",
+        "  void setPlayerMaxHp(Int64 uid, int value) {",
+        lite_player_hp,
+        "Lite player HP wipe detection",
+    )
+
+    lite_player_position = r"""
+void setPlayerPosition(
+  Int64 uid,
+  Map<String, double> position,
+) {
+  ensurePlayer(uid);
+  _playerInfoDatas[uid]!.position = position;
+
+  if (uid == _currentPlayerUuid) {
+    _liteTryConfirmWipe();
+  }
+
+  _scheduleNotify();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void setPlayerPosition(Int64 uid, Map<String, double> position) {",
+        "  void setPlayerRotation(Int64 uid, Map<String, double> rotation) {",
+        lite_player_position,
+        "Lite player teleport detection",
+    )
+
+    lite_monster_template = r"""
+void setMonsterTemplateId(Int64 uid, int id) {
+  if (!ensureMonster(uid)) return;
+
+  final monster = _monsterInfoDatas[uid]!;
+  monster.templateId = id;
+
+  if (monster.name == null || monster.name!.isEmpty) {
+    final name = MonsterNameService().getName(id);
+    if (name != null) {
+      monster.name = name;
+    }
+  }
+
+  if (_liteBossUid == uid) {
+    _liteBossTemplateId = id;
+    _liteBossName = monster.name ?? _liteBossName;
+  }
+
+  _scheduleNotify();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void setMonsterTemplateId(Int64 uid, int id) {",
+        "  void setMonsterName(Int64 uid, String name) {",
+        lite_monster_template,
+        "Lite boss template tracking",
+    )
+
+    lite_monster_name = r"""
+void setMonsterName(Int64 uid, String name) {
+  if (!ensureMonster(uid)) return;
+
+  _monsterInfoDatas[uid]!.name = name;
+  if (_liteBossUid == uid) {
+    _liteBossName = name;
+  }
+
+  _scheduleNotify();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void setMonsterName(Int64 uid, String name) {",
+        "  void setMonsterLevel(Int64 uid, int level) {",
+        lite_monster_name,
+        "Lite boss name tracking",
+    )
+
+    lite_monster_hp = r"""
+void setMonsterHp(Int64 uid, Int64 hp) {
+  if (!ensureMonster(uid)) return;
+
+  final monster = _monsterInfoDatas[uid]!;
+  final oldHp = monster.hp;
+  monster.hp = hp;
+
+  _liteObserveBossHp(uid, oldHp, hp);
+  _scheduleNotify();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void setMonsterHp(Int64 uid, Int64 hp) {",
+        "  void decreaseMonsterHp(Int64 uid, Int64 damage) {",
+        lite_monster_hp,
+        "Lite boss HP reset detection",
+    )
+
+    lite_decrease_monster_hp = r"""
+void decreaseMonsterHp(Int64 uid, Int64 damage) {
+  final monster = _monsterInfoDatas[uid];
+  if (monster == null) return;
+
+  final currentHp = monster.hp ?? Int64.ZERO;
+  if (currentHp <= Int64.ZERO) return;
+
+  var newHp = currentHp - damage;
+  if (newHp < Int64.ZERO) {
+    newHp = Int64.ZERO;
+  }
+
+  monster.hp = newHp;
+  _liteObserveBossHp(uid, currentHp, newHp);
+  _scheduleNotify();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void decreaseMonsterHp(Int64 uid, Int64 damage) {",
+        "  void setMonsterMaxHp(Int64 uid, Int64 maxHp) {",
+        lite_decrease_monster_hp,
+        "Lite boss damage observation",
+    )
+
+    lite_monster_max_hp = r"""
+void setMonsterMaxHp(Int64 uid, Int64 maxHp) {
+  if (!ensureMonster(uid)) return;
+
+  _monsterInfoDatas[uid]!.maxHp = maxHp;
+  _liteConsiderBoss(uid, maxHp);
+  _scheduleNotify();
+}
+"""
+    storage_text = replace_between(
+        storage_text,
+        "  void setMonsterMaxHp(Int64 uid, Int64 maxHp) {",
+        "  void setMonsterPosition(Int64 uid, Map<String, double> position) {",
+        lite_monster_max_hp,
+        "Lite boss candidate detection",
+    )
+
     data_storage.write_text(storage_text, encoding="utf-8")
 
     dart = main_dart.read_text(encoding="utf-8")
@@ -620,6 +1349,8 @@ def main() -> None:
             "flutter_overlay_window.dart';\n"
             "import 'package:shared_preferences/shared_preferences.dart';\n"
             "import 'package:url_launcher/url_launcher.dart';\n"
+            "import 'core/services/encounter_history_service.dart';\n"
+            "import 'views/encounter_history_view.dart';\n"
         ),
         "Lite persistence and URL imports",
     )
@@ -793,6 +1524,9 @@ def main() -> None:
     FlutterOverlayWindow.shareData({
       'players': players,
       'combatTime': storage.currentCombatDuration.inSeconds,
+      'autoResetLocked': storage.liteAutoResetLocked,
+      'lastResetReason': storage.liteLastResetReason,
+      'phase': storage.liteEncounterPhase,
     });
   }
 
@@ -871,7 +1605,33 @@ def main() -> None:
     dart = (
         dart[:home_super_end]
         + "\n    _refreshSupportedClients();"
+        + "\n    DataStorage().initializeLiteEncounterState();"
+        + "\n    unawaited(EncounterHistoryService().deleteExpired());"
         + dart[home_super_end:]
+    )
+
+
+    dart = replace_once(
+        dart,
+        "        DataStorage().reset();",
+        """        DataStorage().finishLiteEncounter(
+          'manual_reset',
+          manual: true,
+        );""",
+        "manual reset history command",
+    )
+    dart = replace_once(
+        dart,
+        """      } else if (message is Map && message.containsKey('selectPlayer')) {""",
+        """      } else if (
+        message is Map &&
+        message.containsKey('autoResetLocked')
+      ) {
+        final locked = message['autoResetLocked'] == true;
+        DataStorage().setLiteAutoResetLocked(locked);
+        _updateOverlay();
+      } else if (message is Map && message.containsKey('selectPlayer')) {""",
+        "auto-reset lock overlay command",
     )
 
     dart = dart.replace("title: 'BlueMeter Mobile'", "title: 'BlueMeter Lite'")
@@ -1168,6 +1928,10 @@ def main() -> None:
 
   Future<void> _stopVpn() async {
     try {
+      DataStorage().finishLiteEncounter(
+        'meter_stopped',
+        manual: true,
+      );
       await platform.invokeMethod('stopVpn');
       if (!mounted) return;
 
@@ -1364,6 +2128,19 @@ def main() -> None:
                             : 'Android will request overlay and VPN permission.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 4),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const EncounterHistoryView(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.history_rounded),
+                        label: const Text('Encounter history'),
                       ),
                       const SizedBox(height: 8),
                       TextButton.icon(

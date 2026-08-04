@@ -6,6 +6,30 @@ All notable user-facing changes to BlueMeter Lite are documented here.
 
 No routine feature development is planned.
 
+## [1.3.0] - TBD
+
+### Added
+
+- Automatic split on channel, line, map and dungeon changes
+- Conservative wipe detection using player revival, teleport and boss reset state
+- Conservative boss phase detection using boss identity and HP resets
+- Auto-reset lock independent from the movement and resize lock
+- Local encounter history in the portrait control app
+- Historical DPS, Healing and Tanking tabs
+- Automatic deletion of history older than seven days
+- Manual deletion of one encounter or all history
+
+### Changed
+
+- Ordinary combat inactivity no longer clears the current meter
+- Manual reset archives the encounter before clearing
+- Stopping the meter archives the active encounter
+
+### Performance
+
+- Reset detection uses lightweight comparisons on packets already parsed
+- History stores compact summaries instead of screenshots or skill timelines
+
 ## [1.2.0] - TBD
 
 ### Added

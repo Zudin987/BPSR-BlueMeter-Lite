@@ -32,6 +32,8 @@ class _OverlayWidgetState extends State<OverlayWidget> {
   static const String _prefY = 'lite_overlay_y';
   static const String _prefLocked = 'lite_overlay_locked';
   static const String _prefMeterType = 'lite_overlay_meter_type';
+  static const String _prefAutoResetLocked =
+      'lite_auto_reset_locked';
 
   List<Map<String, dynamic>> _players = const [];
   int _combatTime = 0;
@@ -39,6 +41,7 @@ class _OverlayWidgetState extends State<OverlayWidget> {
   _LiteViewMode _viewMode = _LiteViewMode.expanded;
   _LiteMeterType _meterType = _LiteMeterType.damage;
   bool _isLocked = false;
+  bool _autoResetLocked = false;
   int _lastResizeRequestMs = 0;
 
   double _windowX = 8;
@@ -57,6 +60,7 @@ class _OverlayWidgetState extends State<OverlayWidget> {
 
       final rawPlayers = event['players'];
       final rawCombatTime = event['combatTime'];
+      final rawAutoResetLocked = event['autoResetLocked'];
 
       setState(() {
         if (rawPlayers is List) {
@@ -68,6 +72,10 @@ class _OverlayWidgetState extends State<OverlayWidget> {
 
         if (rawCombatTime is num) {
           _combatTime = rawCombatTime.toInt();
+        }
+
+        if (rawAutoResetLocked is bool) {
+          _autoResetLocked = rawAutoResetLocked;
         }
       });
 
@@ -124,6 +132,8 @@ Future<void> _restoreLayout() async {
       _ => _LiteMeterType.damage,
     };
     final locked = prefs.getBool(_prefLocked) ?? false;
+    final autoResetLocked =
+        prefs.getBool(_prefAutoResetLocked) ?? false;
 
     if (!mounted) return;
 
@@ -131,6 +141,7 @@ Future<void> _restoreLayout() async {
       _viewMode = mode;
       _meterType = meterType;
       _isLocked = locked;
+      _autoResetLocked = autoResetLocked;
       _windowX = x;
       _windowY = y;
       _windowWidth = width;
@@ -145,6 +156,7 @@ Future<void> _restoreLayout() async {
       OverlayPosition(_windowX, _windowY),
     );
     await _saveLayout();
+    _sendAutoResetLockState();
   } catch (_) {
     // Keep the safe visible startup layout when restoration fails.
   }
@@ -162,6 +174,10 @@ Future<void> _saveLayout() async {
     await prefs.setDouble(_prefX, _windowX);
     await prefs.setDouble(_prefY, _windowY);
     await prefs.setBool(_prefLocked, _isLocked);
+    await prefs.setBool(
+      _prefAutoResetLocked,
+      _autoResetLocked,
+    );
     await prefs.setString(
       _prefMeterType,
       switch (_meterType) {
@@ -287,6 +303,23 @@ void _resetEncounter() {
   final sendPort =
       IsolateNameServer.lookupPortByName('overlay_communication_port');
   sendPort?.send('RESET');
+}
+
+void _sendAutoResetLockState() {
+  final sendPort =
+      IsolateNameServer.lookupPortByName('overlay_communication_port');
+  sendPort?.send({
+    'autoResetLocked': _autoResetLocked,
+  });
+}
+
+Future<void> _toggleAutoResetLock() async {
+  setState(() {
+    _autoResetLocked = !_autoResetLocked;
+  });
+
+  await _saveLayout();
+  _sendAutoResetLockState();
 }
 
 List<Map<String, dynamic>> _rankPlayers() {
@@ -658,6 +691,24 @@ Widget _buildHeader({
                   fontSize: (headerFontSize - 2).clamp(9, 12).toDouble(),
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
+              ),
+            ),
+          ),
+          _buildHeaderButton(
+            onTap: _toggleAutoResetLock,
+            size: 22,
+            child: Tooltip(
+              message: _autoResetLocked
+                  ? 'Automatic reset locked'
+                  : 'Automatic reset enabled',
+              child: Icon(
+                _autoResetLocked
+                    ? Icons.sync_disabled_rounded
+                    : Icons.sync_rounded,
+                size: (headerHeight * 0.46).clamp(12, 17).toDouble(),
+                color: _autoResetLocked
+                    ? const Color(0xFFFFB86B)
+                    : const Color(0xFFAAB2C2),
               ),
             ),
           ),

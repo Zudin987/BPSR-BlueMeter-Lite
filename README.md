@@ -17,7 +17,7 @@ No PC required. Runs directly on your Android device.
 </div>
 
 > [!NOTE]
-> Users still on v1.0.0 must uninstall it once before installing a permanently signed release. Users on v1.1.0 can update normally to v1.2.0.
+> Users still on v1.0.0 must uninstall it once before installing a permanently signed release. Users on v1.1.0 or v1.2.0 can update normally to v1.3.0.
 
 ## Screenshots
 
@@ -47,11 +47,14 @@ No PC required. Runs directly on your Android device.
 - Supported-client detection before VPN startup
 - Portrait control app; the game overlay remains rotation-aware
 - About screen with privacy, license and exact upstream revision
+- Automatic split on channel, line, dungeon, wipe, and phase changes
+- Separate auto-reset lock that preserves data until manual reset
+- Seven-day local encounter history with DPS, Healing, and Tanking views
 - Manual encounter reset
 - Up to 20 displayed players per meter
 - Android-only local capture with no PC relay
 
-BlueMeter Lite intentionally keeps these meters lightweight. It stores only live totals and per-second values; it does not include skill breakdowns, overheal, mitigation, deaths, timelines, encounter history, target analysis, radar or boss-timer tools.
+BlueMeter Lite intentionally keeps these meters lightweight. It stores only live totals and per-second values; it does not include skill breakdowns, overheal, mitigation, death analysis, skill timelines, target analysis, radar or boss-timer tools.
 
 ## Download and install
 
@@ -76,10 +79,11 @@ Android displays a VPN indicator and a foreground-service notification while the
 | `E` | Expanded mode at `360 × 180` |
 | Header drag | Move the overlay while unlocked |
 | Bottom-right handle | Resize while unlocked |
-| Lock icon | Lock or unlock both moving and resizing |
-| Reset icon | Reset the current encounter |
+| Movement lock icon | Lock or unlock both moving and resizing |
+| Auto-reset icon | Enable or lock automatic encounter splitting |
+| Reset icon | Archive and manually reset the current encounter |
 
-The selected meter tab, mode, size, position and lock state are restored the next time the overlay starts.
+The selected meter tab, mode, size, position, movement lock and auto-reset lock are restored the next time the overlay starts.
 
 ## Display format
 
@@ -109,6 +113,28 @@ Healing:  Total Healing (HPS)
 Tanking:  Total Damage Received (Taken Per Second)
 ```
 
+
+## Automatic encounter reset
+
+With automatic reset enabled, BlueMeter Lite splits the current meter when it
+detects a channel or line change, entry into another dungeon or map, a confirmed
+wipe, or a conservative boss phase transition.
+
+The crossed-arrows button disables every automatic split. While it is locked,
+the meter remains untouched until manual reset or the meter is stopped.
+
+Desktop ZDPS can use dungeon-objective messages for exact phase boundaries.
+BlueMeter Mobile does not currently decode that objective stream, so mobile
+phase detection uses conservative boss identity and HP-reset signals.
+
+## Encounter history
+
+Open **Encounter history** from the portrait control app to review locally saved
+encounters. Each entry includes DPS, Healing and Tanking tabs.
+
+History stores compact summaries rather than screenshots and automatically
+deletes entries older than seven days.
+
 ## Supported Android clients
 
 | Region/client | Android package |
@@ -124,7 +150,7 @@ The control app shows the detected client before startup. Only installed support
 
 BlueMeter Lite processes supported BPSR traffic locally on the phone and forwards it to the game's original destination. The project does not operate a relay server and does not require an account.
 
-It adds no advertising, analytics or cloud synchronization. See [PRIVACY.md](PRIVACY.md).
+It adds no advertising, analytics or cloud synchronization. Encounter history is stored locally and automatically deleted after seven days. See [PRIVACY.md](PRIVACY.md).
 
 ## Troubleshooting
 
