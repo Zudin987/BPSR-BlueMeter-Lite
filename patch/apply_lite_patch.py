@@ -400,49 +400,71 @@ def main() -> None:
     container_text = sync_container_data_processor.read_text(
         encoding="utf-8"
     )
-    container_text = replace_once(
-        container_text,
-        """      // SceneData → lineId, mapId, channelId
-          // ONLY process SceneData from the PLAYER's own SyncContainerData.
-          // Other entities (NPCs, companions, etc.) also have SceneData but with
-          // different values that would corrupt our scene tracking.
-          // Since we only set currentPlayerUuid from full player data, this check is reliable.
-          if (vData.hasSceneData() && isFullPlayerData) {
-            final scene = vData.sceneData;
-            _storage.onSceneUpdate(
-              lineId: scene.lineId > 0 ? scene.lineId : null,
-              mapId: scene.mapId > 0 ? scene.mapId : null,
-              channelId: scene.channelId > 0 ? scene.channelId : null,
-            );
-          } else if (vData.hasSceneData()) {
-            // Non-player SceneData — ignore silently
-          } else {
-            // SceneData absent is normal for other entities (NPCs, etc.) — do NOT clear monsters.
-            // Only onSceneUpdate (real line/map change) should clear.
-          }""",
-        """      // SceneData can arrive in either the large full-player packet or a
-          // smaller packet for the already-known current player during transitions.
-          // Continue ignoring scene data belonging to NPCs and other characters.
-          final isCurrentPlayerScene =
-              isFullPlayerData ||
-              playerUid == _storage.currentPlayerUuid;
 
-          if (vData.hasSceneData() && isCurrentPlayerScene) {
-            final scene = vData.sceneData;
-            _storage.onSceneUpdate(
-              // lineId == 0 is meaningful for an instanced/dungeon scene.
-              lineId: scene.lineId,
-              mapId: scene.mapId,
-              channelId: scene.channelId,
-            );
-          }""",
-        "current-player scene packet handling",
+    # Find the complete SceneData section by line markers instead of matching
+    # its exact indentation and every explanatory comment.
+    scene_marker = "// SceneData → lineId, mapId, channelId"
+    attr_marker = "// Attr → HP"
+
+    scene_marker_index = container_text.find(scene_marker)
+    if scene_marker_index == -1:
+        fail("could not locate SceneData section")
+
+    scene_section_start = container_text.rfind(
+        "\n",
+        0,
+        scene_marker_index,
     )
+    scene_section_start = (
+        0 if scene_section_start == -1 else scene_section_start + 1
+    )
+
+    attr_marker_index = container_text.find(
+        attr_marker,
+        scene_marker_index,
+    )
+    if attr_marker_index == -1:
+        fail("could not locate Attr section after SceneData")
+
+    scene_section_end = container_text.rfind(
+        "\n",
+        scene_marker_index,
+        attr_marker_index,
+    )
+    scene_section_end = (
+        attr_marker_index
+        if scene_section_end == -1
+        else scene_section_end + 1
+    )
+
+    lite_scene_section = """      // SceneData can arrive in either the large full-player packet or a
+      // smaller packet for the already-known current player during transitions.
+      // Continue ignoring scene data belonging to NPCs and other characters.
+      final isCurrentPlayerScene =
+          isFullPlayerData ||
+          playerUid == _storage.currentPlayerUuid;
+
+      if (vData.hasSceneData() && isCurrentPlayerScene) {
+        final scene = vData.sceneData;
+        _storage.onSceneUpdate(
+          // lineId == 0 is meaningful for an instanced/dungeon scene.
+          lineId: scene.lineId,
+          mapId: scene.mapId,
+          channelId: scene.channelId,
+        );
+      }
+"""
+
+    container_text = (
+        container_text[:scene_section_start]
+        + lite_scene_section
+        + container_text[scene_section_end:]
+    )
+
     sync_container_data_processor.write_text(
         container_text,
         encoding="utf-8",
     )
-
 
     dps_text = dps_data.read_text(encoding="utf-8")
 
