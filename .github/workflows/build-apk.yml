@@ -9,7 +9,7 @@ on:
       - ".github/workflows/build-apk.yml"
       - ".github/workflows/release.yml"
       - "patch/**"
-      - "RELEASE-NOTES-v1.2.0.md"
+      - "RELEASE-NOTES-v1.3.0.md"
 
 permissions:
   contents: read
@@ -52,7 +52,7 @@ jobs:
         shell: bash
         run: |
           grep -q "^name:" pubspec.yaml
-          grep -q "^version: 1.2.0+19$" pubspec.yaml
+          grep -q "^version: 1.3.0+20$" pubspec.yaml
           grep -q "^environment:" pubspec.yaml
           grep -q "^dependencies:" pubspec.yaml
           grep -q "^flutter:" pubspec.yaml
@@ -119,7 +119,7 @@ jobs:
         shell: bash
         run: |
           cat > upstream/BUILD-METADATA.txt <<EOF
-          BlueMeter Lite version: 1.2.0+19
+          BlueMeter Lite version: 1.3.0+20
           Repository commit: $GITHUB_SHA
           Upstream repository: $UPSTREAM_REPOSITORY
           Upstream commit: $UPSTREAM_COMMIT
