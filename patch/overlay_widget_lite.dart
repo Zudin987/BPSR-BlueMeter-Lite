@@ -1,9 +1,6 @@
-enum _LiteLayoutMode {
-  auto,
+enum _LiteViewMode {
   compact,
-  party,
-  raid,
-  custom,
+  expanded,
 }
 
 class _LiteOverlayPreset {
@@ -32,7 +29,7 @@ class _OverlayWidgetState extends State<OverlayWidget> {
   StreamSubscription? _overlaySubscription;
   Timer? _autoResizeTimer;
 
-  _LiteLayoutMode _layoutMode = _LiteLayoutMode.auto;
+  _LiteViewMode _viewMode = _LiteViewMode.expanded;
   int _lastAutoPlayerCount = -1;
   int _lastResizeRequestMs = 0;
 
@@ -176,37 +173,34 @@ List<Map<String, dynamic>> _rankPlayers() {
     return List<Map<String, dynamic>>.from(visible, growable: false);
   }
 
-  int _visibleLimitForMode() {
-    switch (_layoutMode) {
-      case _LiteLayoutMode.compact:
-        return 5;
-      case _LiteLayoutMode.party:
-        return 10;
-      case _LiteLayoutMode.raid:
-      case _LiteLayoutMode.auto:
-      case _LiteLayoutMode.custom:
-        return _maxDisplayedPlayers;
-    }
-  }
 
-  String _modeLabel() {
-    switch (_layoutMode) {
-      case _LiteLayoutMode.auto:
-        return 'A';
-      case _LiteLayoutMode.compact:
-        return '5';
-      case _LiteLayoutMode.party:
-        return '10';
-      case _LiteLayoutMode.raid:
-        return '20';
-      case _LiteLayoutMode.custom:
-        return '↔';
-    }
-  }
+int _visibleLimitForMode() {
+  return _maxDisplayedPlayers;
+}
 
+String _modeLabel() {
+  return _viewMode == _LiteViewMode.compact ? 'C' : 'E';
+}
 
 _LiteOverlayPreset _presetForPlayerCount(int count) {
   final safeCount = count.clamp(0, _maxDisplayedPlayers).toInt();
+
+  if (_viewMode == _LiteViewMode.compact) {
+    if (safeCount <= 5) {
+      final rows = safeCount == 0 ? 2 : safeCount;
+      final height = (36 + rows * 23).clamp(96, 150).toInt();
+      return _LiteOverlayPreset(430, height);
+    }
+
+    if (safeCount <= 10) {
+      final height = (36 + safeCount * 20).clamp(156, 238).toInt();
+      return _LiteOverlayPreset(520, height);
+    }
+
+    final rowsPerColumn = (safeCount + 1) ~/ 2;
+    final height = (36 + rowsPerColumn * 20).clamp(156, 238).toInt();
+    return _LiteOverlayPreset(780, height);
+  }
 
   if (safeCount <= 5) {
     final rows = safeCount == 0 ? 2 : safeCount;
@@ -224,40 +218,28 @@ _LiteOverlayPreset _presetForPlayerCount(int count) {
   return _LiteOverlayPreset(980, height);
 }
 
-
-_LiteOverlayPreset _presetForMode(_LiteLayoutMode mode) {
-  switch (mode) {
-    case _LiteLayoutMode.compact:
-      return const _LiteOverlayPreset(540, 164);
-    case _LiteLayoutMode.party:
-      return const _LiteOverlayPreset(640, 258);
-    case _LiteLayoutMode.raid:
-      return const _LiteOverlayPreset(980, 258);
-    case _LiteLayoutMode.auto:
-      return _presetForPlayerCount(_activePlayerCount);
-    case _LiteLayoutMode.custom:
-      return const _LiteOverlayPreset(540, 164);
-  }
+int _autoTierForCount(int count) {
+  if (count <= 5) return 5;
+  if (count <= 10) return 10;
+  return 20;
 }
 
-  void _scheduleAutoResize({bool immediate = false}) {
-    if (_layoutMode != _LiteLayoutMode.auto) return;
+void _scheduleAutoResize({bool immediate = false}) {
+  _autoResizeTimer?.cancel();
+  _autoResizeTimer = Timer(
+    Duration(milliseconds: immediate ? 0 : 650),
+    () {
+      if (!mounted) return;
 
-    _autoResizeTimer?.cancel();
-    _autoResizeTimer = Timer(
-      Duration(milliseconds: immediate ? 0 : 650),
-      () {
-        if (!mounted || _layoutMode != _LiteLayoutMode.auto) return;
+      final tier = _autoTierForCount(_activePlayerCount);
+      final preset = _presetForPlayerCount(_activePlayerCount);
 
-        final playerCount = _activePlayerCount;
-        final preset = _presetForPlayerCount(playerCount);
-
-        if (playerCount == _lastAutoPlayerCount && !immediate) return;
-        _lastAutoPlayerCount = playerCount;
-        _resizeOverlay(preset.width.toDouble(), preset.height.toDouble());
-      },
-    );
-  }
+      if (tier == _lastAutoPlayerCount && !immediate) return;
+      _lastAutoPlayerCount = tier;
+      _resizeOverlay(preset.width.toDouble(), preset.height.toDouble());
+    },
+  );
+}
 
   Future<void> _resizeOverlay(double width, double height) async {
     final safeWidth = width.clamp(_minimumWidth, _maximumWidth).toInt();
@@ -274,27 +256,17 @@ _LiteOverlayPreset _presetForMode(_LiteLayoutMode mode) {
     }
   }
 
-  void _cycleLayoutMode() {
-    final nextMode = switch (_layoutMode) {
-      _LiteLayoutMode.auto => _LiteLayoutMode.compact,
-      _LiteLayoutMode.compact => _LiteLayoutMode.party,
-      _LiteLayoutMode.party => _LiteLayoutMode.raid,
-      _LiteLayoutMode.raid => _LiteLayoutMode.auto,
-      _LiteLayoutMode.custom => _LiteLayoutMode.auto,
-    };
 
-    setState(() {
-      _layoutMode = nextMode;
-      _lastAutoPlayerCount = -1;
-    });
+void _toggleViewMode() {
+  setState(() {
+    _viewMode = _viewMode == _LiteViewMode.compact
+        ? _LiteViewMode.expanded
+        : _LiteViewMode.compact;
+    _lastAutoPlayerCount = -1;
+  });
 
-    if (nextMode == _LiteLayoutMode.auto) {
-      _scheduleAutoResize(immediate: true);
-    } else {
-      final preset = _presetForMode(nextMode);
-      _resizeOverlay(preset.width.toDouble(), preset.height.toDouble());
-    }
-  }
+  _scheduleAutoResize(immediate: true);
+}
 
   void _moveWindow(DragUpdateDetails details) {
     _windowX = (_windowX + details.delta.dx).clamp(0.0, 10000.0);
@@ -313,9 +285,6 @@ _LiteOverlayPreset _presetForMode(_LiteLayoutMode mode) {
     _resizeStartSize = MediaQuery.of(context).size;
     _resizeStartPointer = details.globalPosition;
 
-    setState(() {
-      _layoutMode = _LiteLayoutMode.custom;
-    });
   }
 
   void _updateManualResize(DragUpdateDetails details) {
@@ -423,17 +392,17 @@ _LiteOverlayPreset _presetForMode(_LiteLayoutMode mode) {
             ),
             const SizedBox(width: 4),
             _buildHeaderButton(
-              onTap: _cycleLayoutMode,
+              onTap: _toggleViewMode,
               child: Container(
                 constraints: const BoxConstraints(minWidth: 21),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 decoration: BoxDecoration(
-                  color: _layoutMode == _LiteLayoutMode.auto
+                  color: _viewMode == _LiteViewMode.expanded
                       ? const Color(0x423A86FF)
                       : const Color(0x1FFFFFFF),
                   borderRadius: BorderRadius.circular(5),
                   border: Border.all(
-                    color: _layoutMode == _LiteLayoutMode.auto
+                    color: _viewMode == _LiteViewMode.expanded
                         ? const Color(0x88699DFF)
                         : const Color(0x22FFFFFF),
                     width: 0.7,
@@ -466,6 +435,7 @@ _LiteOverlayPreset _presetForMode(_LiteLayoutMode mode) {
   }
 
 
+
 Color _classColor(String className) {
   switch (className) {
     case 'Stormblade':
@@ -489,13 +459,12 @@ Color _classColor(String className) {
   }
 }
 
-String _playerIdentity(Map<String, dynamic> player) {
+String _expandedIdentity(Map<String, dynamic> player) {
   final rawName = (player['name'] as String?)?.trim();
   final name = (rawName == null || rawName.isEmpty) ? 'Unknown' : rawName;
   final className = (player['className'] as String?)?.trim() ?? '';
   final combatPower = ((player['combatPower'] as num?) ?? 0).toInt();
-  final seasonStrength =
-      ((player['seasonStrength'] as num?) ?? 0).toInt();
+  final seasonStrength = ((player['seasonStrength'] as num?) ?? 0).toInt();
 
   final ownerPrefix = player['isMe'] == true ? '★ ' : '';
   final classPart =
@@ -507,6 +476,13 @@ String _playerIdentity(Map<String, dynamic> player) {
   }
 
   return '$ownerPrefix$name$classPart$scorePart';
+}
+
+String _compactIdentity(Map<String, dynamic> player) {
+  final rawName = (player['name'] as String?)?.trim();
+  final name = (rawName == null || rawName.isEmpty) ? 'Unknown' : rawName;
+  final ownerPrefix = player['isMe'] == true ? '★ ' : '';
+  return '$ownerPrefix$name';
 }
 
 String _formatContribution(double percentage) {
@@ -525,23 +501,30 @@ Widget _buildPlayerRow({
   final total = ((player['total'] as num?) ?? 0).toDouble();
   final dps = ((player['dps'] as num?) ?? 0).toDouble();
   final ratio = (total / maxTotal).clamp(0.0, 1.0).toDouble();
-  final contribution =
-      groupTotal > 0 ? (total / groupTotal * 100.0) : 0.0;
+  final contribution = groupTotal > 0 ? (total / groupTotal * 100.0) : 0.0;
   final isMe = player['isMe'] == true;
   final rank = (player['_rank'] as int?) ?? 0;
   final className = (player['className'] as String?)?.trim() ?? '';
   final classColor = _classColor(className);
-  final identity = _playerIdentity(player);
 
-  // Deliberately denser than v0.2 so 10–20 player groups remain readable.
-  final fontSize = (rowHeight * 0.40).clamp(8.4, 11.2).toDouble();
-  final rankFontSize = (fontSize - 0.5).clamp(8.0, 10.6).toDouble();
-  final metricFontSize = (fontSize + 0.1).clamp(8.5, 11.3).toDouble();
-  final rankWidth = (columnWidth * 0.065).clamp(24.0, 34.0).toDouble();
-  final metricWidth =
-      (columnWidth * 0.31).clamp(106.0, 174.0).toDouble();
-  final percentageWidth =
-      (columnWidth * 0.075).clamp(32.0, 48.0).toDouble();
+  final compact = _viewMode == _LiteViewMode.compact;
+  final identity = compact ? _compactIdentity(player) : _expandedIdentity(player);
+
+  final fontSize = compact
+      ? (rowHeight * 0.39).clamp(8.0, 10.6).toDouble()
+      : (rowHeight * 0.38).clamp(8.2, 11.0).toDouble();
+  final rankFontSize = (fontSize - 0.4).clamp(7.8, 10.2).toDouble();
+  final metricFontSize = (fontSize + 0.1).clamp(8.2, 11.1).toDouble();
+
+  final rankWidth = compact
+      ? (columnWidth * 0.070).clamp(24.0, 34.0).toDouble()
+      : (columnWidth * 0.065).clamp(24.0, 34.0).toDouble();
+  final metricWidth = compact
+      ? (columnWidth * 0.31).clamp(100.0, 160.0).toDouble()
+      : (columnWidth * 0.31).clamp(108.0, 176.0).toDouble();
+  final percentageWidth = compact
+      ? (columnWidth * 0.08).clamp(34.0, 48.0).toDouble()
+      : (columnWidth * 0.075).clamp(32.0, 48.0).toDouble();
 
   return Padding(
     padding: EdgeInsets.symmetric(
@@ -626,8 +609,7 @@ Widget _buildPlayerRow({
                     color: isMe
                         ? const Color(0xFFFFFFFF)
                         : const Color(0xFFE1E4EA),
-                    fontWeight:
-                        isMe ? FontWeight.w800 : FontWeight.w600,
+                    fontWeight: isMe ? FontWeight.w800 : FontWeight.w600,
                     fontSize: fontSize,
                     height: 1,
                   ),
@@ -679,7 +661,6 @@ Widget _buildPlayerRow({
   );
 }
 
-
 Widget _buildPlayerList({
   required List<Map<String, dynamic>> players,
   required double maxTotal,
@@ -713,6 +694,7 @@ Widget _buildPlayerList({
 }
 
 
+
 Widget _buildMeterBody({
   required BoxConstraints constraints,
   required List<Map<String, dynamic>> visiblePlayers,
@@ -720,15 +702,16 @@ Widget _buildMeterBody({
   required double groupTotal,
 }) {
   final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 540.0;
-  final height =
-      constraints.maxHeight.isFinite ? constraints.maxHeight : 130.0;
-  final useTwoColumns = visiblePlayers.length > 10 && width >= 780;
+  final height = constraints.maxHeight.isFinite ? constraints.maxHeight : 130.0;
+  final compact = _viewMode == _LiteViewMode.compact;
+  final useTwoColumns = visiblePlayers.length > 10 && width >= (compact ? 620 : 780);
   final rowsPerColumn = useTwoColumns
       ? (visiblePlayers.length + 1) ~/ 2
       : visiblePlayers.length;
   final safeRowCount = rowsPerColumn == 0 ? 1 : rowsPerColumn;
-  final rowHeight =
-      (height / safeRowCount).clamp(18.0, 27.0).toDouble();
+  final rowHeight = (height / safeRowCount)
+      .clamp(compact ? 17.0 : 18.0, compact ? 24.0 : 27.0)
+      .toDouble();
 
   if (visiblePlayers.isEmpty) {
     return Center(
@@ -822,9 +805,9 @@ Widget _buildMeterBody({
               ? outerConstraints.maxHeight
               : 150.0;
           final headerHeight =
-              (height * 0.16).clamp(27.0, 34.0).toDouble();
+              (height * 0.15).clamp(26.0, 33.0).toDouble();
           final headerFontSize =
-              (headerHeight * 0.38).clamp(10.0, 13.0).toDouble();
+              (headerHeight * 0.36).clamp(9.5, 12.5).toDouble();
 
           return Container(
             decoration: BoxDecoration(

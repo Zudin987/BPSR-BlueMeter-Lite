@@ -51,6 +51,7 @@ def main() -> None:
     manifest = upstream / "android/app/src/main/AndroidManifest.xml"
     app_gradle = upstream / "android/app/build.gradle.kts"
     data_storage = upstream / "lib/core/state/data_storage.dart"
+    icon_patch_root = patch_dir / "android_icons"
 
     for required in (
         main_dart,
@@ -60,6 +61,7 @@ def main() -> None:
         manifest,
         app_gradle,
         data_storage,
+        icon_patch_root,
     ):
         if not required.exists():
             fail(f"missing upstream file: {required}")
@@ -144,6 +146,27 @@ def main() -> None:
         "Android application ID",
     )
     app_gradle.write_text(gradle_text, encoding="utf-8")
+
+    # Replace the Android launcher icons with the provided portrait.
+    icon_targets = [
+        ("mipmap-mdpi", 48),
+        ("mipmap-hdpi", 72),
+        ("mipmap-xhdpi", 96),
+        ("mipmap-xxhdpi", 144),
+        ("mipmap-xxxhdpi", 192),
+    ]
+
+    res_root = upstream / "android/app/src/main/res"
+    for folder_name, _ in icon_targets:
+        source_folder = icon_patch_root / folder_name
+        target_folder = res_root / folder_name
+        target_folder.mkdir(parents=True, exist_ok=True)
+
+        for icon_name in ("ic_launcher.png", "ic_launcher_round.png"):
+            source_icon = source_folder / icon_name
+            if not source_icon.exists():
+                fail(f"missing launcher icon asset: {source_icon}")
+            shutil.copyfile(source_icon, target_folder / icon_name)
 
     # Keep only the counters required for a DPS ranking. This avoids per-hit
     # skill, target, timeline, healing, and damage-taken allocations.
@@ -380,7 +403,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.4.0+7",
+        "version: 1.5.0+8",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")

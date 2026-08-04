@@ -1,40 +1,48 @@
-# BlueMeter Lite v0.3 — ZDPS-style rows
+# BlueMeter Lite v0.4 — App icon + compact/expanded modes
 
-Replace these two files in the GitHub repository:
+Replace these items in the GitHub repository:
 
 - `patch/overlay_widget_lite.dart`
 - `patch/apply_lite_patch.py`
+- everything inside `patch/android_icons/`
 
 A commit under `patch/**` starts the APK build automatically.
 
-## New row format
+## Overlay modes
 
-`★ Username — Class (Ability Score+Season Strength)    Total Damage (DPS)    Share%`
+Tap the header mode button to switch:
 
-Example:
+- `C` = Compact
+- `E` = Expanded
+
+### Compact mode
+Shows:
+
+`01. ★ MrHard    101.31K (12.39K)    95%`
+
+Compact mode keeps:
+- rank
+- owner star
+- colored class bar
+- total damage
+- DPS in parentheses
+- percentage
+
+Compact mode hides:
+- class name
+- ability score
+- season strength
+
+### Expanded mode
+Shows:
 
 `01. ★ MrHard — Frost Mage (49632+2250)    101.31K (12.39K)    95%`
 
-## Behaviour
+## Icon
 
-- Rankings and bars are based on total damage.
-- DPS is shown in parentheses after total damage.
-- Contribution percentage uses total party/raid damage.
-- Class comes from `professionId`.
-- Ability Score uses `combatPower`.
-- Illusion Breaking season strength uses `seasonStrength`.
-- The local/owner player gets:
-  - a gold star
-  - a gold outline and left marker
-  - brighter text
-  - guaranteed visibility when outside the normal top cut
-- Class-colored bars are used without loading icons.
-- Font and rows are denser than v0.2.
-- Auto widths are larger so the class, score, total, DPS, and percentage fit:
-  - 1–5 players: 540 px
-  - 6–10 players: 640 px
-  - 11–20 players: 980 px in two columns
+The uploaded portrait is now used as the Android launcher icon by copying
+generated PNG files into the standard Android mipmap folders.
 
 ## APK version
 
-`1.4.0+7`
+`1.5.0+8`
