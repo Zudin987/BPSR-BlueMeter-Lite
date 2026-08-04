@@ -197,23 +197,30 @@ def main() -> None:
     # BlueMeter already handles Season Strength in later delta packets, but
     # its initial SyncNearEntities appearance path ignores that attribute.
     near_text = sync_near_entities_processor.read_text(encoding="utf-8")
-    near_text = replace_once(
+    near_text = regex_once(
         near_text,
-        """      case AttrType.attrFightPoint:
-        _storage.setPlayerCombatPower(playerUid, reader.readInt32());
-        break;
-
-      case AttrType.attrLevel:""",
-        """      case AttrType.attrFightPoint:
-        _storage.setPlayerCombatPower(playerUid, reader.readInt32());
-        break;
-
-      case AttrType.attrSeasonStrength:
-      case AttrType.attrSeasonStrengthTotal:
-        _storage.setPlayerSeasonStrength(playerUid, reader.readInt32());
-        break;
-
-      case AttrType.attrLevel:""",
+        (
+            r"^(?P<indent>[ \t]*)case AttrType\.attrFightPoint:[ \t]*\n"
+            r"(?P=indent)[ \t]+_storage\.setPlayerCombatPower\("
+            r"playerUid,[ \t]*reader\.readInt32\(\)\);[ \t]*\n"
+            r"(?P=indent)[ \t]+break;[ \t]*\n"
+            r"(?:[ \t]*\n)*"
+            r"(?P=indent)case AttrType\.attrLevel:"
+        ),
+        (
+            r"\g<indent>case AttrType.attrFightPoint:\n"
+            r"\g<indent>  _storage.setPlayerCombatPower("
+            r"playerUid, reader.readInt32());\n"
+            r"\g<indent>  break;\n\n"
+            r"\g<indent>case AttrType.attrSeasonStrength:\n"
+            r"\g<indent>case AttrType.attrSeasonStrengthTotal:\n"
+            r"\g<indent>  _storage.setPlayerSeasonStrength(\n"
+            r"\g<indent>    playerUid,\n"
+            r"\g<indent>    reader.readInt32(),\n"
+            r"\g<indent>  );\n"
+            r"\g<indent>  break;\n\n"
+            r"\g<indent>case AttrType.attrLevel:"
+        ),
         "initial nearby-player Season 3 strength cases",
     )
     sync_near_entities_processor.write_text(near_text, encoding="utf-8")
@@ -585,7 +592,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.10.0+13",
+        "version: 1.10.1+14",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")

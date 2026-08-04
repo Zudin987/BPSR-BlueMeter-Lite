@@ -1,48 +1,35 @@
-# BlueMeter Lite v0.9 — Remote Illusion-Breaking Strength fix
+# BlueMeter Lite v0.9.1 — GitHub patch-matcher fix
 
-Replace these GitHub files:
+The v0.9 build failed during `Apply Lite patch` with:
 
-1. `patch/apply_lite_patch.py`
-2. `patch/overlay_widget_lite.dart`
+`could not find initial nearby-player Season 3 strength cases`
 
-The overlay file is unchanged from v0.8 and is included so the update is
-self-contained.
+## Cause
 
-## Actual cause
+The patch searched for the correct Dart switch cases using an exact text block.
+Current upstream has different indentation and no blank line between the
+`attrFightPoint` and `attrLevel` cases.
 
-ZDPS can show Illusion-Breaking Strength for random nearby players because it
-processes the attribute collection for nearby entities, not only party data.
+## Fix
 
-BlueMeter has two relevant paths:
+v0.9.1 uses a whitespace-tolerant regular expression. It:
 
-1. `SyncNearEntities` for the initial player appearance
-2. `SyncNearDeltaInfo` for later incremental updates
+1. finds `AttrType.attrFightPoint`
+2. accepts any indentation
+3. accepts zero or more blank lines
+4. inserts the two Season 3 cases
+5. preserves the original indentation
 
-The later delta path already handles:
+The matcher was tested against the current upstream source layout.
 
-- `AttrSeasonStrength`
-- `AttrSeasonStrengthTotal`
+## GitHub update
 
-The initial appearance path handled name, profession, Ability Score and other
-stats, but skipped both Season Strength values. Remote players therefore often
-remained at zero unless a later delta resent the attribute.
+Replace only:
 
-v0.9 adds both Season Strength cases to the initial nearby-player parser.
+`patch/apply_lite_patch.py`
 
-## Season 3 IDs
-
-- `11440` — Illusion-Breaking Strength
-- `11441` — Illusion-Breaking Strength total
-
-## Existing behaviour retained
-
-- Compact mode `180 × 80`
-- Expanded mode `360 × 180`
-- vertically centered rows
-- one-column scrolling
-- session cache for the last non-zero strength value
-- Ability Score-only fallback when a specific packet genuinely lacks strength
+The overlay file is included unchanged for completeness.
 
 ## Version
 
-`1.10.0+13`
+`1.10.1+14`
