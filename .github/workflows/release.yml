@@ -1,0 +1,212 @@
+name: Publish BlueMeter Lite Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag
+        required: true
+        default: "v1.1.0"
+        type: string
+      draft:
+        description: Create as draft for review
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: Mark as prerelease
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPOSITORY: https://github.com/jbourny/bluemetermobile.git
+  UPSTREAM_COMMIT: 3c9d757cc0fd67971faf18447638c08044fb9b7c
+  FLUTTER_VERSION: "3.44.7"
+  EXPECTED_VERSION_NAME: "1.1.0"
+  EXPECTED_VERSION_CODE: "18"
+  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout BlueMeter Lite
+        uses: actions/checkout@v5
+
+      - name: Validate release inputs and signing secrets
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          test "$RELEASE_TAG" = "v$EXPECTED_VERSION_NAME"
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists." >&2
+            exit 1
+          fi
+
+      - name: Checkout pinned BlueMeter Mobile source
+        shell: bash
+        run: |
+          git init upstream
+          git -C upstream remote add origin "$UPSTREAM_REPOSITORY"
+          git -C upstream fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C upstream checkout --detach FETCH_HEAD
+
+          ACTUAL_COMMIT="$(git -C upstream rev-parse HEAD)"
+          test "$ACTUAL_COMMIT" = "$UPSTREAM_COMMIT"
+          printf '%s\n' "$ACTUAL_COMMIT" > upstream/UPSTREAM_COMMIT.txt
+
+      - name: Apply Lite patch
+        run: python3 patch/apply_lite_patch.py upstream
+
+      - name: Verify release version
+        working-directory: upstream
+        shell: bash
+        run: |
+          test "$(awk '/^version:/ {print $2}' pubspec.yaml)"             = "$EXPECTED_VERSION_NAME+$EXPECTED_VERSION_CODE"
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "${{ env.FLUTTER_VERSION }}"
+          channel: stable
+          cache: true
+
+      - name: Configure permanent release signing
+        shell: bash
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64"             | base64 --decode             > upstream/android/app/bluemeter-lite-release.jks
+
+          cat > upstream/android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=bluemeter-lite-release.jks
+          EOF
+
+      - name: Install dependencies
+        working-directory: upstream
+        run: flutter pub get
+
+      - name: Build signed release APKs
+        working-directory: upstream
+        run: flutter build apk --release --split-per-abi
+
+      - name: Verify release signatures
+        shell: bash
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+
+          FIRST_APK=""
+          for apk in upstream/build/app/outputs/flutter-apk/*.apk; do
+            "$APKSIGNER" verify --verbose --print-certs "$apk"
+            if [ -z "$FIRST_APK" ]; then
+              FIRST_APK="$apk"
+            fi
+          done
+
+          "$APKSIGNER" verify --print-certs "$FIRST_APK"             | grep "Signer #1 certificate SHA-256 digest:"             > SIGNING-CERT-SHA256.txt
+
+      - name: Prepare permanent release assets
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          mkdir -p dist
+
+          cp upstream/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk             "dist/BlueMeter-Lite-$RELEASE_TAG-arm64-v8a.apk"
+          cp upstream/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk             "dist/BlueMeter-Lite-$RELEASE_TAG-armeabi-v7a.apk"
+          cp upstream/build/app/outputs/flutter-apk/app-x86_64-release.apk             "dist/BlueMeter-Lite-$RELEASE_TAG-x86_64.apk"
+          cp SIGNING-CERT-SHA256.txt dist/
+
+          cat > upstream/BUILD-METADATA.txt <<EOF
+          BlueMeter Lite version: $EXPECTED_VERSION_NAME+$EXPECTED_VERSION_CODE
+          Release tag: $RELEASE_TAG
+          Repository commit: $GITHUB_SHA
+          Upstream repository: $UPSTREAM_REPOSITORY
+          Upstream commit: $UPSTREAM_COMMIT
+          Flutter version: $FLUTTER_VERSION
+          Signing certificate: see SIGNING-CERT-SHA256.txt in release assets
+          EOF
+
+          rm -f upstream/android/key.properties
+          rm -f upstream/android/app/bluemeter-lite-release.jks
+          rm -rf upstream/.git
+          rm -rf upstream/build
+          rm -rf upstream/.dart_tool
+          rm -rf upstream/android/.gradle
+
+          mkdir -p upstream/BLUEMETER_LITE_BUILD_KIT
+          cp -R patch upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp -R .github/workflows upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp build-local.ps1 upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp BUILDING.md SIGNING-SETUP.md upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp LICENSE LICENSE-NOTICE.md upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp RELEASE-NOTES-v1.1.0.md upstream/BLUEMETER_LITE_BUILD_KIT/
+
+          (
+            cd upstream
+            zip -q -r "../dist/BlueMeter-Lite-$RELEASE_TAG-source.zip" .
+          )
+
+          (
+            cd dist
+            sha256sum               BlueMeter-Lite-"$RELEASE_TAG"-*.apk               BlueMeter-Lite-"$RELEASE_TAG"-source.zip               SIGNING-CERT-SHA256.txt               > SHA256SUMS.txt
+          )
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          CREATE_DRAFT: ${{ inputs.draft }}
+          CREATE_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          RELEASE_ARGS=(
+            "$RELEASE_TAG"
+            dist/*
+            --target "$GITHUB_SHA"
+            --title "BlueMeter Lite $RELEASE_TAG"
+            --notes-file RELEASE-NOTES-v1.1.0.md
+          )
+
+          if [ "$CREATE_DRAFT" = "true" ]; then
+            RELEASE_ARGS+=(--draft)
+          fi
+
+          if [ "$CREATE_PRERELEASE" = "true" ]; then
+            RELEASE_ARGS+=(--prerelease --latest=false)
+          else
+            RELEASE_ARGS+=(--latest)
+          fi
+
+          gh release create "${RELEASE_ARGS[@]}"
+
+      - name: Remove any remaining private signing files
+        if: always()
+        shell: bash
+        run: |
+          rm -f upstream/android/key.properties
+          rm -f upstream/android/app/bluemeter-lite-release.jks

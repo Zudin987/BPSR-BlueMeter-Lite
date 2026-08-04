@@ -7,10 +7,21 @@ on:
       - main
     paths:
       - ".github/workflows/build-apk.yml"
+      - ".github/workflows/release.yml"
       - "patch/**"
+      - "RELEASE-NOTES-v1.1.0.md"
 
 permissions:
   contents: read
+
+env:
+  UPSTREAM_REPOSITORY: https://github.com/jbourny/bluemetermobile.git
+  UPSTREAM_COMMIT: 3c9d757cc0fd67971faf18447638c08044fb9b7c
+  FLUTTER_VERSION: "3.44.7"
+  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
 jobs:
   build:
@@ -18,31 +29,34 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout Lite patch kit
+      - name: Checkout BlueMeter Lite
         uses: actions/checkout@v5
 
-      - name: Clone BlueMeter upstream
+      - name: Checkout pinned BlueMeter Mobile source
+        shell: bash
         run: |
-          git clone --depth 1 https://github.com/jbourny/bluemetermobile.git upstream
+          git init upstream
+          git -C upstream remote add origin "$UPSTREAM_REPOSITORY"
+          git -C upstream fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C upstream checkout --detach FETCH_HEAD
 
-      - name: Record upstream revision
-        run: |
-          git -C upstream rev-parse HEAD > upstream/UPSTREAM_COMMIT.txt
+          ACTUAL_COMMIT="$(git -C upstream rev-parse HEAD)"
+          test "$ACTUAL_COMMIT" = "$UPSTREAM_COMMIT"
+          printf '%s\n' "$ACTUAL_COMMIT" > upstream/UPSTREAM_COMMIT.txt
 
       - name: Apply Lite patch
-        run: |
-          python3 patch/apply_lite_patch.py upstream
+        run: python3 patch/apply_lite_patch.py upstream
 
-      - name: Verify patched pubspec
+      - name: Verify patched source
         working-directory: upstream
+        shell: bash
         run: |
-          echo "Checking that pubspec.yaml was not truncated..."
           grep -q "^name:" pubspec.yaml
-          grep -q "^version:" pubspec.yaml
+          grep -q "^version: 1.1.0+18$" pubspec.yaml
           grep -q "^environment:" pubspec.yaml
           grep -q "^dependencies:" pubspec.yaml
           grep -q "^flutter:" pubspec.yaml
-          echo "pubspec.yaml looks complete."
+          grep -q 'applicationId = "com.bluemeter.lite"' android/app/build.gradle.kts
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -50,29 +64,70 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Flutter
+      - name: Set up pinned Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "${{ env.FLUTTER_VERSION }}"
           channel: stable
           cache: true
 
-      - name: Show versions
+      - name: Show build versions
+        shell: bash
         run: |
           java -version
           flutter --version
           dart --version
+          printf 'Repository commit: %s\n' "$GITHUB_SHA"
+          printf 'Upstream commit: %s\n' "$UPSTREAM_COMMIT"
+
+      - name: Configure optional release signing
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        shell: bash
+        run: |
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64"             | base64 --decode             > upstream/android/app/bluemeter-lite-release.jks
+
+          cat > upstream/android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=bluemeter-lite-release.jks
+          EOF
 
       - name: Install dependencies
         working-directory: upstream
-        run: |
-          flutter pub get
+        run: flutter pub get
 
-      - name: Build release APKs
+      - name: Build split release APKs
         working-directory: upstream
-        run: |
-          flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi
 
-      - name: Upload APKs
+      - name: Verify signed APKs when release key is configured
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        shell: bash
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+          for apk in upstream/build/app/outputs/flutter-apk/*.apk; do
+            "$APKSIGNER" verify --verbose --print-certs "$apk"
+          done
+
+      - name: Write build metadata
+        shell: bash
+        run: |
+          cat > upstream/BUILD-METADATA.txt <<EOF
+          BlueMeter Lite version: 1.1.0+18
+          Repository commit: $GITHUB_SHA
+          Upstream repository: $UPSTREAM_REPOSITORY
+          Upstream commit: $UPSTREAM_COMMIT
+          Flutter version: $FLUTTER_VERSION
+          Signed with persistent release key: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+          EOF
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: bluemeter-lite-apk
@@ -80,12 +135,31 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Prepare corresponding source artifact
+      - name: Remove private signing files
+        if: always()
+        shell: bash
+        run: |
+          rm -f upstream/android/key.properties
+          rm -f upstream/android/app/bluemeter-lite-release.jks
+
+      - name: Prepare corresponding source
+        if: success()
+        shell: bash
         run: |
           rm -rf upstream/.git
           rm -rf upstream/build
+          rm -rf upstream/.dart_tool
+          rm -rf upstream/android/.gradle
 
-      - name: Upload patched source
+          mkdir -p upstream/BLUEMETER_LITE_BUILD_KIT
+          cp -R patch upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp -R .github/workflows upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp build-local.ps1 upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp BUILDING.md SIGNING-SETUP.md upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp LICENSE LICENSE-NOTICE.md upstream/BLUEMETER_LITE_BUILD_KIT/
+
+      - name: Upload corresponding source
+        if: success()
         uses: actions/upload-artifact@v7
         with:
           name: bluemeter-lite-patched-source
