@@ -19,7 +19,8 @@ class OverlayWidget extends StatefulWidget {
 
 class _OverlayWidgetState extends State<OverlayWidget> {
   static const int _maxDisplayedPlayers = 20;
-  static const double _minimumWidth = 360;
+  static const double _compactMinimumWidth = 180;
+  static const double _expandedMinimumWidth = 360;
   static const double _maximumWidth = 1200;
   static const double _minimumHeight = 96;
   static const double _maximumHeight = 620;
@@ -182,24 +183,24 @@ String _modeLabel() {
   return _viewMode == _LiteViewMode.compact ? 'C' : 'E';
 }
 
+
 _LiteOverlayPreset _presetForPlayerCount(int count) {
   final safeCount = count.clamp(0, _maxDisplayedPlayers).toInt();
 
   if (_viewMode == _LiteViewMode.compact) {
     if (safeCount <= 5) {
       final rows = safeCount == 0 ? 2 : safeCount;
-      final height = (36 + rows * 23).clamp(96, 150).toInt();
-      return _LiteOverlayPreset(430, height);
+      final height = (35 + rows * 22).clamp(92, 145).toInt();
+      return _LiteOverlayPreset(300, height);
     }
 
     if (safeCount <= 10) {
-      final height = (36 + safeCount * 20).clamp(156, 238).toInt();
-      return _LiteOverlayPreset(520, height);
+      final height = (35 + safeCount * 20).clamp(150, 235).toInt();
+      return _LiteOverlayPreset(340, height);
     }
 
-    final rowsPerColumn = (safeCount + 1) ~/ 2;
-    final height = (36 + rowsPerColumn * 20).clamp(156, 238).toInt();
-    return _LiteOverlayPreset(780, height);
+    // Always one column. Additional rows are reached by scrolling.
+    return const _LiteOverlayPreset(390, 270);
   }
 
   if (safeCount <= 5) {
@@ -213,9 +214,8 @@ _LiteOverlayPreset _presetForPlayerCount(int count) {
     return _LiteOverlayPreset(640, height);
   }
 
-  final rowsPerColumn = (safeCount + 1) ~/ 2;
-  final height = (38 + rowsPerColumn * 22).clamp(170, 258).toInt();
-  return _LiteOverlayPreset(980, height);
+  // Expanded raid view also stays one column.
+  return const _LiteOverlayPreset(720, 320);
 }
 
 int _autoTierForCount(int count) {
@@ -241,21 +241,29 @@ void _scheduleAutoResize({bool immediate = false}) {
   );
 }
 
-  Future<void> _resizeOverlay(double width, double height) async {
-    final safeWidth = width.clamp(_minimumWidth, _maximumWidth).toInt();
-    final safeHeight = height.clamp(_minimumHeight, _maximumHeight).toInt();
 
-    try {
-      await FlutterOverlayWindow.resizeOverlay(
-        safeWidth,
-        safeHeight,
-        false,
-      );
-    } catch (_) {
-      // Keep the DPS meter usable even if a device rejects a resize request.
-    }
+double get _minimumWidthForCurrentMode {
+  return _viewMode == _LiteViewMode.compact
+      ? _compactMinimumWidth
+      : _expandedMinimumWidth;
+}
+
+Future<void> _resizeOverlay(double width, double height) async {
+  final safeWidth = width
+      .clamp(_minimumWidthForCurrentMode, _maximumWidth)
+      .toInt();
+  final safeHeight = height.clamp(_minimumHeight, _maximumHeight).toInt();
+
+  try {
+    await FlutterOverlayWindow.resizeOverlay(
+      safeWidth,
+      safeHeight,
+      false,
+    );
+  } catch (_) {
+    // Keep the DPS meter usable even if a device rejects a resize request.
   }
-
+}
 
 void _toggleViewMode() {
   setState(() {
@@ -294,7 +302,8 @@ void _toggleViewMode() {
 
     final difference = details.globalPosition - startPointer;
     final width =
-        (startSize.width + difference.dx).clamp(_minimumWidth, _maximumWidth);
+        (startSize.width + difference.dx)
+            .clamp(_minimumWidthForCurrentMode, _maximumWidth);
     final height =
         (startSize.height + difference.dy).clamp(_minimumHeight, _maximumHeight);
 
@@ -511,19 +520,23 @@ Widget _buildPlayerRow({
   final identity = compact ? _compactIdentity(player) : _expandedIdentity(player);
 
   final fontSize = compact
-      ? (rowHeight * 0.39).clamp(8.0, 10.6).toDouble()
+      ? (rowHeight * 0.38).clamp(6.8, 10.4).toDouble()
       : (rowHeight * 0.38).clamp(8.2, 11.0).toDouble();
-  final rankFontSize = (fontSize - 0.4).clamp(7.8, 10.2).toDouble();
-  final metricFontSize = (fontSize + 0.1).clamp(8.2, 11.1).toDouble();
+  final rankFontSize = compact
+      ? (fontSize - 0.3).clamp(6.5, 9.8).toDouble()
+      : (fontSize - 0.4).clamp(7.8, 10.2).toDouble();
+  final metricFontSize = compact
+      ? (fontSize + 0.05).clamp(6.9, 10.5).toDouble()
+      : (fontSize + 0.1).clamp(8.2, 11.1).toDouble();
 
   final rankWidth = compact
-      ? (columnWidth * 0.070).clamp(24.0, 34.0).toDouble()
+      ? (columnWidth * 0.105).clamp(18.0, 30.0).toDouble()
       : (columnWidth * 0.065).clamp(24.0, 34.0).toDouble();
   final metricWidth = compact
-      ? (columnWidth * 0.31).clamp(100.0, 160.0).toDouble()
+      ? (columnWidth * 0.36).clamp(64.0, 142.0).toDouble()
       : (columnWidth * 0.31).clamp(108.0, 176.0).toDouble();
   final percentageWidth = compact
-      ? (columnWidth * 0.08).clamp(34.0, 48.0).toDouble()
+      ? (columnWidth * 0.12).clamp(24.0, 42.0).toDouble()
       : (columnWidth * 0.075).clamp(32.0, 48.0).toDouble();
 
   return Padding(
@@ -615,7 +628,7 @@ Widget _buildPlayerRow({
                   ),
                 ),
               ),
-              const SizedBox(width: 5),
+              SizedBox(width: compact ? 2 : 5),
               SizedBox(
                 width: metricWidth,
                 child: FittedBox(
@@ -635,7 +648,7 @@ Widget _buildPlayerRow({
                   ),
                 ),
               ),
-              const SizedBox(width: 5),
+              SizedBox(width: compact ? 2 : 5),
               SizedBox(
                 width: percentageWidth,
                 child: Text(
@@ -695,6 +708,7 @@ Widget _buildPlayerList({
 
 
 
+
 Widget _buildMeterBody({
   required BoxConstraints constraints,
   required List<Map<String, dynamic>> visiblePlayers,
@@ -704,14 +718,9 @@ Widget _buildMeterBody({
   final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 540.0;
   final height = constraints.maxHeight.isFinite ? constraints.maxHeight : 130.0;
   final compact = _viewMode == _LiteViewMode.compact;
-  final useTwoColumns = visiblePlayers.length > 10 && width >= (compact ? 620 : 780);
-  final rowsPerColumn = useTwoColumns
-      ? (visiblePlayers.length + 1) ~/ 2
-      : visiblePlayers.length;
-  final safeRowCount = rowsPerColumn == 0 ? 1 : rowsPerColumn;
-  final rowHeight = (height / safeRowCount)
-      .clamp(compact ? 17.0 : 18.0, compact ? 24.0 : 27.0)
-      .toDouble();
+
+  // Fixed readable row heights. ListView provides scrolling at every size.
+  final rowHeight = compact ? 20.0 : 22.0;
 
   if (visiblePlayers.isEmpty) {
     return Center(
@@ -722,56 +731,20 @@ Widget _buildMeterBody({
           style: TextStyle(
             color: const Color(0xFF8B93A3),
             fontWeight: FontWeight.w500,
-            fontSize: (height * 0.10).clamp(9.0, 12.0).toDouble(),
+            fontSize: (height * 0.10).clamp(8.0, 12.0).toDouble(),
           ),
         ),
       ),
     );
   }
 
-  if (!useTwoColumns) {
-    return _buildPlayerList(
-      players: visiblePlayers,
-      maxTotal: maxTotal,
-      groupTotal: groupTotal,
-      rowHeight: rowHeight,
-      columnWidth: width,
-      availableHeight: height,
-    );
-  }
-
-  final splitIndex = (visiblePlayers.length + 1) ~/ 2;
-  final leftPlayers = visiblePlayers.sublist(0, splitIndex);
-  final rightPlayers = visiblePlayers.sublist(splitIndex);
-
-  return Row(
-    children: [
-      Expanded(
-        child: _buildPlayerList(
-          players: leftPlayers,
-          maxTotal: maxTotal,
-          groupTotal: groupTotal,
-          rowHeight: rowHeight,
-          columnWidth: width / 2,
-          availableHeight: height,
-        ),
-      ),
-      Container(
-        width: 1,
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        color: const Color(0x20FFFFFF),
-      ),
-      Expanded(
-        child: _buildPlayerList(
-          players: rightPlayers,
-          maxTotal: maxTotal,
-          groupTotal: groupTotal,
-          rowHeight: rowHeight,
-          columnWidth: width / 2,
-          availableHeight: height,
-        ),
-      ),
-    ],
+  return _buildPlayerList(
+    players: visiblePlayers,
+    maxTotal: maxTotal,
+    groupTotal: groupTotal,
+    rowHeight: rowHeight,
+    columnWidth: width,
+    availableHeight: height,
   );
 }
 

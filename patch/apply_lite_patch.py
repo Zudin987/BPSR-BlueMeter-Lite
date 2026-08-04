@@ -403,7 +403,7 @@ def main() -> None:
     yaml = regex_once(
         yaml,
         r"^version:\s*[^\r\n]+$",
-        "version: 1.5.0+8",
+        "version: 1.6.0+9",
         "pubspec version",
     )
     pubspec.write_text(yaml, encoding="utf-8")

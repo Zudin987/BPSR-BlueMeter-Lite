@@ -1,48 +1,22 @@
-# BlueMeter Lite v0.4 — App icon + compact/expanded modes
+# BlueMeter Lite v0.5 update
 
-Replace these items in the GitHub repository:
+Replace these GitHub files:
 
-- `patch/overlay_widget_lite.dart`
-- `patch/apply_lite_patch.py`
-- everything inside `patch/android_icons/`
+1. `patch/overlay_widget_lite.dart`
+2. `patch/apply_lite_patch.py`
+3. `.github/workflows/build-apk.yml`
 
-A commit under `patch/**` starts the APK build automatically.
+## Changes
 
-## Overlay modes
+- Always one column, regardless of player count or overlay width.
+- The vertical player list scrolls whenever all rows do not fit.
+- Compact mode can be manually reduced to 180 px wide.
+- Expanded mode still has a 360 px minimum width.
+- Compact automatic widths are now 300, 340, and 390 px.
+- Expanded 11–20 player mode is 720 px wide, one column, and scrollable.
+- Compact font and fixed column allocations adapt better at very narrow widths.
+- `actions/upload-artifact@v7` removes the Node.js 20 warning.
 
-Tap the header mode button to switch:
+## Version
 
-- `C` = Compact
-- `E` = Expanded
-
-### Compact mode
-Shows:
-
-`01. ★ MrHard    101.31K (12.39K)    95%`
-
-Compact mode keeps:
-- rank
-- owner star
-- colored class bar
-- total damage
-- DPS in parentheses
-- percentage
-
-Compact mode hides:
-- class name
-- ability score
-- season strength
-
-### Expanded mode
-Shows:
-
-`01. ★ MrHard — Frost Mage (49632+2250)    101.31K (12.39K)    95%`
-
-## Icon
-
-The uploaded portrait is now used as the Android launcher icon by copying
-generated PNG files into the standard Android mipmap folders.
-
-## APK version
-
-`1.5.0+8`
+`1.6.0+9`
