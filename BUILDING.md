@@ -1,25 +1,55 @@
 # Building BlueMeter Lite
 
-BlueMeter Lite is maintained as a patch kit on top of [BlueMeter Mobile](https://github.com/jbourny/bluemetermobile).
+BlueMeter Lite is maintained as a patch kit on top of BlueMeter Mobile.
 
-The build process:
+## Reproducible inputs
 
-1. clones the current upstream source
-2. records the upstream Git commit
-3. applies `patch/apply_lite_patch.py`
-4. builds split Android release APKs
-5. uploads the APKs and corresponding patched source
+The v1.1.0 build is pinned to:
 
-## GitHub Actions
+```text
+BlueMeter Mobile: 3c9d757cc0fd67971faf18447638c08044fb9b7c
+Flutter:          3.44.7
+Java:             17
+App version:      1.1.0+18
+```
 
-1. Open the repository's **Actions** tab.
-2. Select **Build BlueMeter Lite APK**.
-3. Choose **Run workflow**.
-4. Open the completed run.
-5. Download `bluemeter-lite-apk`.
-6. Download `bluemeter-lite-patched-source` when preparing a public release.
+The workflow checks out the exact upstream commit rather than whatever happens to be the latest `main` branch.
 
-The workflow also runs automatically when the patch or build workflow changes.
+## Normal GitHub Actions build
+
+Use **Actions → Build BlueMeter Lite APK → Run workflow**.
+
+The normal workflow:
+
+1. checks out the pinned upstream commit
+2. applies the Lite patch
+3. verifies the patched version
+4. builds split APKs
+5. verifies APK signatures when signing secrets exist
+6. uploads APK and corresponding-source artifacts for 30 days
+
+## Signed GitHub Release
+
+Use **Actions → Publish BlueMeter Lite Release → Run workflow** only after completing [SIGNING-SETUP.md](SIGNING-SETUP.md).
+
+The release workflow defaults to:
+
+```text
+Tag:        v1.1.0
+Draft:      true
+Prerelease: false
+```
+
+It creates permanent Release assets:
+
+- `BlueMeter-Lite-v1.1.0-arm64-v8a.apk`
+- `BlueMeter-Lite-v1.1.0-armeabi-v7a.apk`
+- `BlueMeter-Lite-v1.1.0-x86_64.apk`
+- `BlueMeter-Lite-v1.1.0-source.zip`
+- `SHA256SUMS.txt`
+- `SIGNING-CERT-SHA256.txt`
+
+Review the draft release, then publish it manually.
 
 ## Local Windows build
 
@@ -27,45 +57,25 @@ Requirements:
 
 - Git
 - Python 3
-- Flutter stable
+- Flutter 3.44.7
 - Java 17
 - Android SDK configured for Flutter
 
-From PowerShell:
+Run:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\build-local.ps1
 ```
 
-The APKs are copied to:
+When `private-signing/bluemeter-lite-release.jks` and `private-signing/key.properties` exist, the local build uses the permanent release key. Otherwise it falls back to debug signing.
 
-```text
-build-output/
-```
+## Architecture
 
-## APK architecture
-
-Flutter produces split APKs:
-
-- `arm64-v8a` — recommended for most modern Android phones
+- `arm64-v8a` — most modern Android phones
 - `armeabi-v7a` — older 32-bit ARM devices
-- `x86_64` — mainly emulators and uncommon x86 Android devices
+- `x86_64` — emulators and uncommon x86 Android devices
 
-## Upstream compatibility
+## AGPL corresponding source
 
-The patch targets the current structure of BlueMeter Mobile. An upstream source change can break a patch marker even when BlueMeter Lite itself has not changed.
-
-When that happens, update the patch against the new upstream layout and run the full GitHub Actions build again.
-
-## Release signing
-
-Before publishing 1.0, configure one persistent Android release signing key.
-
-Do not rely on a newly generated CI signing identity for every build. Users must be able to install later releases over the existing app without uninstalling it.
-
-Store the keystore and passwords as protected GitHub Actions secrets. Never commit a private signing key or password to the public repository.
-
-## AGPL source requirement
-
-For every distributed APK, provide the complete corresponding source. The GitHub workflow's patched-source artifact records the upstream revision and contains the generated source used for that build.
+Every public APK release must include the exact patched source used to build it. The release workflow removes private signing material before creating the source archive.

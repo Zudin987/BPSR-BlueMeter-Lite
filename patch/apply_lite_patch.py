@@ -41,8 +41,8 @@ def main() -> None:
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
 
-    lite_version_name = "1.11.2"
-    lite_version_code = 17
+    lite_version_name = "1.1.0"
+    lite_version_code = 18
 
     upstream_commit_file = upstream / "UPSTREAM_COMMIT.txt"
     if upstream_commit_file.exists():
@@ -218,9 +218,65 @@ def main() -> None:
     gradle_text = app_gradle.read_text(encoding="utf-8")
     gradle_text = replace_once(
         gradle_text,
+        "plugins {\n",
+        (
+            "import java.io.FileInputStream\n"
+            "import java.util.Properties\n\n"
+            "plugins {\n"
+        ),
+        "Android signing imports",
+    )
+    gradle_text = replace_once(
+        gradle_text,
+        "}\n\nandroid {\n",
+        (
+            "}\n\n"
+            'val keystorePropertiesFile = rootProject.file("key.properties")\n'
+            "val keystoreProperties = Properties()\n"
+            "if (keystorePropertiesFile.exists()) {\n"
+            "    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n"
+            "}\n\n"
+            "android {\n"
+        ),
+        "Android signing properties",
+    )
+    gradle_text = replace_once(
+        gradle_text,
         'applicationId = "com.bluemeter.bluemeter_mobile"',
         'applicationId = "com.bluemeter.lite"',
         "Android application ID",
+    )
+    gradle_text = replace_once(
+        gradle_text,
+        """    buildTypes {
+        release {
+            // TODO: Add your own signing config for the release build.
+            // Signing with the debug keys for now, so `flutter run --release` works.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }""",
+        """    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                // Local development can still build without private release secrets.
+                signingConfigs.getByName("debug")
+            }
+        }
+    }""",
+        "Android release signing block",
     )
     app_gradle.write_text(gradle_text, encoding="utf-8")
 
