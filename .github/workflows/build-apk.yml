@@ -32,6 +32,14 @@ jobs:
       - name: Checkout BlueMeter Lite
         uses: actions/checkout@v5
 
+      - name: Validate patch scripts
+        shell: bash
+        run: |
+          python3 -m py_compile \
+            patch/apply_lite_patch.py \
+            patch/apply_zdps_location_patch.py \
+            patch/apply_performance_update.py
+
       - name: Checkout pinned BlueMeter Mobile source
         shell: bash
         run: |
@@ -60,6 +68,17 @@ jobs:
           grep -q "^dependencies:" pubspec.yaml
           grep -q "^flutter:" pubspec.yaml
           grep -q 'applicationId = "com.bluemeter.lite"' android/app/build.gradle.kts
+
+          # Encounter-location patch output and safety checks.
+          test -f lib/core/data/lite_scene_catalog.dart
+          test -f lib/views/encounter_history_view.dart
+          grep -q "LiteSceneCatalog.contains" lib/core/state/data_storage.dart
+          grep -q "_liteCaptureEncounterSceneIfNeeded" lib/core/state/data_storage.dart
+          ! grep -q "_LiteSocialSceneDecoder" lib/core/analyze/message_analyzer_v2.dart
+
+          # Confirm the current low-impact overlay settings reached main.dart.
+          grep -q "static const int _maxDisplayedPlayers = 20;" lib/main.dart
+          grep -q "static const Duration _overlayRefreshInterval = Duration(seconds: 2);" lib/main.dart
 
       - name: Set up Java
         uses: actions/setup-java@v5
