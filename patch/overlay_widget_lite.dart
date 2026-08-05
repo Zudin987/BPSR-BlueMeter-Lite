@@ -18,6 +18,8 @@ class OverlayWidget extends StatefulWidget {
 
 class _OverlayWidgetState extends State<OverlayWidget> {
   static const int _maxDisplayedPlayers = 20;
+  static const Duration _overlayRefreshInterval = Duration(seconds: 2);
+  static const int _formatCacheLimit = 512;
   static const double _compactMinimumWidth = 180;
   static const double _compactMinimumHeight = 80;
   static const double _expandedMinimumWidth = 360;
@@ -51,11 +53,23 @@ class _OverlayWidgetState extends State<OverlayWidget> {
   Size? _resizeStartSize;
   Offset? _resizeStartPointer;
 
-  // Performance: coalesce overlay-isolate events and avoid rebuilding the
-  // complete player list when the visible payload has not changed.
+  // Performance: keep packet calculation untouched, but render only the
+  // newest cumulative snapshot at most once every two seconds.
   Timer? _liteUiFlushTimer;
   Map<String, dynamic>? _litePendingPayload;
-  String _liteLastUiSignature = '';
+  String _liteLastReceivedCombatSignature = '';
+  String _liteLastAppliedCombatSignature = '';
+  String _liteLastAppliedControlSignature = '';
+  int _playersRevision = 0;
+
+  int _rankCacheRevision = -1;
+  _LiteMeterType? _rankCacheMeterType;
+  List<Map<String, dynamic>> _rankedPlayersCache = const [];
+  double _rankedMaxTotalCache = 1.0;
+  double _rankedGroupTotalCache = 0.0;
+
+  final Map<String, String> _formattedNumberCache = <String, String>{};
+  final Map<String, String> _formattedMetricCache = <String, String>{};
 
   @override
   void initState() {
@@ -64,12 +78,28 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     _overlaySubscription = FlutterOverlayWindow.overlayListener.listen((event) {
       if (!mounted || event is! Map) return;
 
-      _litePendingPayload = Map<String, dynamic>.from(event);
+      final payload = Map<String, dynamic>.from(event);
+      final combatSignature = _combatPayloadSignature(payload['players']);
+      final controlSignature = _controlPayloadSignature(payload);
 
-      // Combine bursts into one inexpensive update. The main bridge already
-      // runs at a low rate, while this also protects against duplicate events.
+      // Ignore timer/rate-only ticks while nobody has dealt, healed, or taken
+      // new damage. This freezes the visible meter during ordinary downtime
+      // without stopping packet capture or encounter history collection.
+      final combatChanged =
+          combatSignature != _liteLastReceivedCombatSignature;
+      final controlChanged =
+          controlSignature != _liteLastAppliedControlSignature;
+      if (!combatChanged && !controlChanged) return;
+
+      if (combatChanged) {
+        _liteLastReceivedCombatSignature = combatSignature;
+      }
+      _litePendingPayload = payload;
+
+      // Keep only the newest cumulative snapshot. No hit is discarded because
+      // totals are still calculated by DataStorage before reaching the overlay.
       _liteUiFlushTimer ??= Timer(
-        const Duration(milliseconds: 250),
+        _overlayRefreshInterval,
         _flushLiteUiPayload,
       );
     });
@@ -79,6 +109,49 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     });
   }
 
+  String _combatPayloadSignature(dynamic rawPlayers) {
+    if (rawPlayers is! List) return 'none';
+
+    final buffer = StringBuffer()..write(rawPlayers.length);
+    for (final rawPlayer in rawPlayers) {
+      if (rawPlayer is! Map) continue;
+      buffer
+        ..write('|')
+        ..write(rawPlayer['uid'])
+        ..write(':')
+        ..write(rawPlayer['name'])
+        ..write(':')
+        ..write(rawPlayer['className'])
+        ..write(':')
+        ..write(rawPlayer['isMe'])
+        ..write(':')
+        ..write(rawPlayer['combatPower'])
+        ..write(':')
+        ..write(rawPlayer['illusionBreakingStrength'])
+        ..write(':')
+        ..write(rawPlayer['totalDamage'])
+        ..write(':')
+        ..write(rawPlayer['totalHealing'])
+        ..write(':')
+        ..write(rawPlayer['totalTaken']);
+    }
+    return buffer.toString();
+  }
+
+  String _controlPayloadSignature(Map<String, dynamic> payload) {
+    return '${payload['autoResetLocked']}|'
+        '${payload['lastResetReason']}|${payload['phase']}';
+  }
+
+  void _invalidatePlayerCaches() {
+    _rankCacheRevision = -1;
+    _rankCacheMeterType = null;
+    _rankedPlayersCache = const [];
+    _rankedMaxTotalCache = 1.0;
+    _rankedGroupTotalCache = 0.0;
+    _formattedMetricCache.clear();
+  }
+
   void _flushLiteUiPayload() {
     _liteUiFlushTimer = null;
     final payload = _litePendingPayload;
@@ -86,20 +159,24 @@ class _OverlayWidgetState extends State<OverlayWidget> {
 
     if (!mounted || payload == null) return;
 
-    // combatTime changes every second, so compare player and lock data only.
-    // The timer text can update without rebuilding identical player maps.
     final rawPlayers = payload['players'];
     final rawCombatTime = payload['combatTime'];
     final rawAutoResetLocked = payload['autoResetLocked'];
-    final signature = '${rawPlayers.toString()}|$rawAutoResetLocked';
-    final playerDataChanged = signature != _liteLastUiSignature;
-    final nextCombatTime = rawCombatTime is num
-        ? rawCombatTime.toInt()
-        : _combatTime;
-    final timeChanged = nextCombatTime != _combatTime;
+    final combatSignature = _combatPayloadSignature(rawPlayers);
+    final controlSignature = _controlPayloadSignature(payload);
+    final playerDataChanged =
+        combatSignature != _liteLastAppliedCombatSignature;
+    final controlChanged =
+        controlSignature != _liteLastAppliedControlSignature;
 
-    if (!playerDataChanged && !timeChanged) return;
-    if (playerDataChanged) _liteLastUiSignature = signature;
+    if (!playerDataChanged && !controlChanged) return;
+
+    if (playerDataChanged) {
+      _liteLastAppliedCombatSignature = combatSignature;
+    }
+    if (controlChanged) {
+      _liteLastAppliedControlSignature = controlSignature;
+    }
 
     setState(() {
       if (playerDataChanged && rawPlayers is List) {
@@ -107,9 +184,15 @@ class _OverlayWidgetState extends State<OverlayWidget> {
             .whereType<Map>()
             .map((entry) => Map<String, dynamic>.from(entry))
             .toList(growable: false);
-      }
+        _playersRevision += 1;
+        _invalidatePlayerCaches();
 
-      _combatTime = nextCombatTime;
+        // Update the visible timer only with real combat-data changes. During
+        // idle periods the complete overlay remains still.
+        if (rawCombatTime is num) {
+          _combatTime = rawCombatTime.toInt();
+        }
+      }
 
       if (rawAutoResetLocked is bool) {
         _autoResetLocked = rawAutoResetLocked;
@@ -122,6 +205,9 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     _liteUiFlushTimer?.cancel();
     _liteUiFlushTimer = null;
     _litePendingPayload = null;
+    _rankedPlayersCache = const [];
+    _formattedNumberCache.clear();
+    _formattedMetricCache.clear();
     _overlaySubscription?.cancel();
     super.dispose();
   }
@@ -291,6 +377,7 @@ Future<void> _setMeterType(_LiteMeterType meterType) async {
 
   setState(() {
     _meterType = meterType;
+    _invalidatePlayerCaches();
   });
 
   await _saveLayout();
@@ -298,23 +385,45 @@ Future<void> _setMeterType(_LiteMeterType meterType) async {
 
 String _formatNumber(num number) {
   final value = number.toDouble().abs();
+  final cacheKey = value.toString();
+  final cached = _formattedNumberCache[cacheKey];
+  if (cached != null) return cached;
 
+  late final String formatted;
   if (value >= 1000000000) {
     final scaled = value / 1000000000;
-    return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}B';
-  }
-
-  if (value >= 1000000) {
+    formatted =
+        '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}B';
+  } else if (value >= 1000000) {
     final scaled = value / 1000000;
-    return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}M';
-  }
-
-  if (value >= 1000) {
+    formatted =
+        '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}M';
+  } else if (value >= 1000) {
     final scaled = value / 1000;
-    return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}K';
+    formatted =
+        '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}K';
+  } else {
+    formatted = value.toStringAsFixed(0);
   }
 
-  return value.toStringAsFixed(0);
+  if (_formattedNumberCache.length >= _formatCacheLimit) {
+    _formattedNumberCache.clear();
+  }
+  _formattedNumberCache[cacheKey] = formatted;
+  return formatted;
+}
+
+String _formatMetricText(double total, double rate) {
+  final cacheKey = '$total|$rate';
+  final cached = _formattedMetricCache[cacheKey];
+  if (cached != null) return cached;
+
+  final formatted = '${_formatNumber(total)} (${_formatNumber(rate)})';
+  if (_formattedMetricCache.length >= _formatCacheLimit) {
+    _formattedMetricCache.clear();
+  }
+  _formattedMetricCache[cacheKey] = formatted;
+  return formatted;
 }
 
 String _formatTime(int seconds) {
@@ -357,6 +466,11 @@ Future<void> _toggleAutoResetLock() async {
 }
 
 List<Map<String, dynamic>> _rankPlayers() {
+  if (_rankCacheRevision == _playersRevision &&
+      _rankCacheMeterType == _meterType) {
+    return _rankedPlayersCache;
+  }
+
   final ranked = _players
       .where((player) => _playerMetricTotal(player) > 0)
       .map((player) => Map<String, dynamic>.from(player))
@@ -375,11 +489,22 @@ List<Map<String, dynamic>> _rankPlayers() {
       return aName.compareTo(bName);
     });
 
+  var groupTotal = 0.0;
   for (var index = 0; index < ranked.length; index++) {
     ranked[index]['_rank'] = index + 1;
+    groupTotal += _playerMetricTotal(ranked[index]);
   }
 
-  return ranked;
+  _rankCacheRevision = _playersRevision;
+  _rankCacheMeterType = _meterType;
+  _rankedPlayersCache = List<Map<String, dynamic>>.unmodifiable(ranked);
+  _rankedGroupTotalCache = groupTotal;
+  _rankedMaxTotalCache = ranked.isEmpty
+      ? 1.0
+      : _playerMetricTotal(ranked.first)
+          .clamp(1.0, double.infinity)
+          .toDouble();
+  return _rankedPlayersCache;
 }
 
   List<Map<String, dynamic>> _selectVisiblePlayers(
@@ -1064,7 +1189,7 @@ Widget _buildPlayerRow({
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
                     child: Text(
-                      '${_formatNumber(total)} (${_formatNumber(rate)})',
+                      _formatMetricText(total, rate),
                       maxLines: 1,
                       textAlign: TextAlign.right,
                       textHeightBehavior: const TextHeightBehavior(
@@ -1193,15 +1318,8 @@ Widget _buildMeterBody({
       ranked,
       _visibleLimitForMode(),
     );
-    final maxTotal = ranked.isEmpty
-        ? 1.0
-        : _playerMetricTotal(ranked.first)
-            .clamp(1.0, double.infinity)
-            .toDouble();
-    final groupTotal = ranked.fold<double>(
-      0.0,
-      (sum, player) => sum + _playerMetricTotal(player),
-    );
+    final maxTotal = _rankedMaxTotalCache;
+    final groupTotal = _rankedGroupTotalCache;
 
     return Material(
       color: Colors.transparent,

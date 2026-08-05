@@ -4,6 +4,75 @@ import 'package:flutter/material.dart';
 
 import '../core/services/encounter_history_service.dart';
 
+// Scene labels are resolved from the same map IDs already stored with each
+// encounter. Existing history entries therefore gain readable names without a
+// database migration. Unknown IDs safely fall back to the boss or reset label.
+const Map<int, String> _liteSceneNames = <int, String>{
+  7: 'Asteria Plains',
+  8: 'Asterleeds',
+  9: 'Bahamar Highlands',
+  10: 'Montegnor Valley',
+  11: 'Starland',
+  71: 'Duskdye Woods',
+  72: 'Everfall Forest',
+  73: 'Windhowl Canyon',
+  74: 'Underground District',
+  75: "Skimmer's Lair",
+  76: 'Land of Crimson Illusion',
+  91: 'Sunken Corridor',
+  92: 'Gloomy Depths',
+  6043: 'Chaotic - Soundless City',
+  6044: 'Chaotic - Soundless City',
+  6045: 'Chaotic - Soundless City',
+  6421: 'Chaotic - Soundless City',
+  6422: 'Chaotic - Soundless City',
+  6423: 'Chaotic - Soundless City',
+  6521: 'Chaotic - Mech Facility',
+  6522: 'Chaotic - Mech Facility',
+  6523: 'Chaotic - Mech Facility',
+  6524: 'Chaotic - Mech Facility',
+  6525: 'Chaotic - Mech Facility',
+  12000: 'Guild Center',
+  12011: 'Guild Hunt - Hard',
+  12012: 'Guild Hunt - Normal',
+  12013: 'Guild Hunt - Easy',
+  12014: 'Guild Hunt - Normal',
+  12015: 'Guild Hunt - Hard',
+  12018: 'Guild Hunt - Normal',
+  12019: 'Guild Hunt - Hard',
+  12022: 'Guild Hunt - Normal',
+  12023: 'Guild Hunt - Hard',
+};
+
+String _historyReasonLabel(String reason) {
+  return switch (reason) {
+    'wipe' => 'Wipe',
+    'channel_change' => 'Channel change',
+    'line_change' => 'Line change',
+    'new_dungeon' => 'New dungeon',
+    'map_change' => 'Map change',
+    'new_phase' => 'New phase',
+    'manual_reset' => 'Manual reset',
+    'meter_stopped' => 'Meter stopped',
+    _ => reason.replaceAll('_', ' '),
+  };
+}
+
+String? _historySceneName(LiteEncounterHistory encounter) {
+  if (encounter.mapId <= 0) return null;
+  return _liteSceneNames[encounter.mapId];
+}
+
+String _historyTitle(LiteEncounterHistory encounter) {
+  final sceneName = _historySceneName(encounter);
+  if (sceneName != null && sceneName.isNotEmpty) return sceneName;
+
+  final bossName = encounter.bossName.trim();
+  if (bossName.isNotEmpty) return bossName;
+
+  return _historyReasonLabel(encounter.reason);
+}
+
 class EncounterHistoryView extends StatefulWidget {
   const EncounterHistoryView({super.key});
 
@@ -12,8 +81,7 @@ class EncounterHistoryView extends StatefulWidget {
       _EncounterHistoryViewState();
 }
 
-class _EncounterHistoryViewState
-    extends State<EncounterHistoryView> {
+class _EncounterHistoryViewState extends State<EncounterHistoryView> {
   late Future<List<LiteEncounterHistory>> _historyFuture;
 
   @override
@@ -42,20 +110,17 @@ class _EncounterHistoryViewState
           ),
           actions: [
             TextButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(false),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(true),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
               child: const Text('Delete all'),
             ),
           ],
         );
       },
     );
-
     if (confirmed != true) return;
 
     await EncounterHistoryService().deleteAll();
@@ -86,9 +151,7 @@ class _EncounterHistoryViewState
         future: _historyFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
@@ -96,17 +159,14 @@ class _EncounterHistoryViewState
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Could not load encounter history.\n'
-                  '${snapshot.error}',
+                  'Could not load encounter history.\n${snapshot.error}',
                   textAlign: TextAlign.center,
                 ),
               ),
             );
           }
 
-          final history =
-              snapshot.data ?? const <LiteEncounterHistory>[];
-
+          final history = snapshot.data ?? const <LiteEncounterHistory>[];
           if (history.isEmpty) {
             return RefreshIndicator(
               onRefresh: _refresh,
@@ -115,10 +175,7 @@ class _EncounterHistoryViewState
                 padding: const EdgeInsets.all(24),
                 children: const [
                   SizedBox(height: 90),
-                  Icon(
-                    Icons.history_rounded,
-                    size: 56,
-                  ),
+                  Icon(Icons.history_rounded, size: 56),
                   SizedBox(height: 14),
                   Text(
                     'No saved encounters yet',
@@ -146,8 +203,7 @@ class _EncounterHistoryViewState
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
               itemCount: history.length + 1,
-              separatorBuilder: (_, __) =>
-                  const SizedBox(height: 8),
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 if (index == 0) {
                   return const Padding(
@@ -166,8 +222,7 @@ class _EncounterHistoryViewState
                 final encounter = history[index - 1];
                 return _EncounterHistoryCard(
                   encounter: encounter,
-                  onDelete: () =>
-                      _deleteEncounter(encounter.id),
+                  onDelete: () => _deleteEncounter(encounter.id),
                 );
               },
             ),
@@ -189,7 +244,6 @@ class _EncounterHistoryCard extends StatelessWidget {
 
   String _formatDate(DateTime date) {
     String two(int value) => value.toString().padLeft(2, '0');
-
     return '${date.year}-${two(date.month)}-${two(date.day)} '
         '${two(date.hour)}:${two(date.minute)}';
   }
@@ -201,52 +255,31 @@ class _EncounterHistoryCard extends StatelessWidget {
     return '$minutes:${remainder.toString().padLeft(2, '0')}';
   }
 
-  String _reasonLabel(String reason) {
-    return switch (reason) {
-      'wipe' => 'Wipe',
-      'channel_change' => 'Channel change',
-      'line_change' => 'Line change',
-      'new_dungeon' => 'New dungeon',
-      'map_change' => 'Map change',
-      'new_phase' => 'New phase',
-      'manual_reset' => 'Manual reset',
-      'meter_stopped' => 'Meter stopped',
-      _ => reason.replaceAll('_', ' '),
-    };
-  }
-
   Map<String, dynamic>? _topDamagePlayer() {
     final players = encounter.players
         .where(
           (player) =>
-              ((player['totalDamage'] as num?) ?? 0)
-                  .toDouble() >
-              0,
+              ((player['totalDamage'] as num?) ?? 0).toDouble() > 0,
         )
-        .toList(growable: false)
+        .map((player) => Map<String, dynamic>.from(player))
+        .toList(growable: true)
       ..sort((a, b) {
-        final left =
-            ((a['totalDamage'] as num?) ?? 0).toDouble();
-        final right =
-            ((b['totalDamage'] as num?) ?? 0).toDouble();
+        final left = ((a['totalDamage'] as num?) ?? 0).toDouble();
+        final right = ((b['totalDamage'] as num?) ?? 0).toDouble();
         return right.compareTo(left);
       });
-
     return players.isEmpty ? null : players.first;
   }
 
   @override
   Widget build(BuildContext context) {
     final topPlayer = _topDamagePlayer();
-    final bossName = encounter.bossName.trim();
-    final title = bossName.isEmpty
-        ? _reasonLabel(encounter.reason)
-        : bossName;
-
+    final title = _historyTitle(encounter);
+    final sceneName = _historySceneName(encounter);
     final sceneParts = <String>[
-      if (encounter.mapId > 0) 'Map ${encounter.mapId}',
-      if (encounter.channelId > 0)
-        'Channel ${encounter.channelId}',
+      if (encounter.mapId > 0 && sceneName == null)
+        'Map ${encounter.mapId}',
+      if (encounter.channelId > 0) 'Channel ${encounter.channelId}',
       if (encounter.lineId > 0) 'Line ${encounter.lineId}',
       if (encounter.phase > 0) 'Phase ${encounter.phase}',
     ];
@@ -288,7 +321,7 @@ class _EncounterHistoryCard extends StatelessWidget {
                     Text(
                       '${_formatDate(encounter.endedAt)}'
                       ' • ${_formatDuration(encounter.durationSeconds)}'
-                      ' • ${_reasonLabel(encounter.reason)}',
+                      ' • ${_historyReasonLabel(encounter.reason)}',
                     ),
                     if (sceneParts.isNotEmpty) ...[
                       const SizedBox(height: 3),
@@ -297,14 +330,11 @@ class _EncounterHistoryCard extends StatelessWidget {
                     if (topPlayer != null) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'Top DPS: '
-                        '${topPlayer['name'] ?? 'Unknown'}'
+                        'Top DPS: ${topPlayer['name'] ?? 'Unknown'}'
                         ' • ${_historyFormatNumber(
                           (topPlayer['totalDamage'] as num?) ?? 0,
                         )}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ],
                   ],
@@ -333,15 +363,11 @@ class EncounterHistoryDetailView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = encounter.bossName.trim().isEmpty
-        ? encounter.reason.replaceAll('_', ' ')
-        : encounter.bossName.trim();
-
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(title),
+          title: Text(_historyTitle(encounter)),
           bottom: const TabBar(
             tabs: [
               Tab(text: 'DPS'),
@@ -394,16 +420,13 @@ class _HistoryMetricList extends StatelessWidget {
   Widget build(BuildContext context) {
     final ranked = players
         .where(
-          (player) =>
-              ((player[totalKey] as num?) ?? 0).toDouble() > 0,
+          (player) => ((player[totalKey] as num?) ?? 0).toDouble() > 0,
         )
         .map((entry) => Map<String, dynamic>.from(entry))
-        .toList(growable: false)
+        .toList(growable: true)
       ..sort((a, b) {
-        final left =
-            ((a[totalKey] as num?) ?? 0).toDouble();
-        final right =
-            ((b[totalKey] as num?) ?? 0).toDouble();
+        final left = ((a[totalKey] as num?) ?? 0).toDouble();
+        final right = ((b[totalKey] as num?) ?? 0).toDouble();
         return right.compareTo(left);
       });
 
@@ -423,24 +446,17 @@ class _HistoryMetricList extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 5),
       itemBuilder: (context, index) {
         final player = ranked[index];
-        final total =
-            ((player[totalKey] as num?) ?? 0).toDouble();
-        final rate =
-            ((player[rateKey] as num?) ?? 0).toDouble();
-        final percent =
-            groupTotal > 0 ? total / groupTotal * 100 : 0.0;
+        final total = ((player[totalKey] as num?) ?? 0).toDouble();
+        final rate = ((player[rateKey] as num?) ?? 0).toDouble();
+        final percent = groupTotal > 0 ? total / groupTotal * 100 : 0.0;
         final isMe = player['isMe'] == true;
         final rawName = (player['name'] as String?)?.trim();
-        final name =
-            rawName == null || rawName.isEmpty ? 'Unknown' : rawName;
+        final name = rawName == null || rawName.isEmpty ? 'Unknown' : rawName;
         final specialization =
             (player['className'] as String?)?.trim() ?? '';
 
         return Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: isMe
                 ? Theme.of(context)
@@ -459,9 +475,7 @@ class _HistoryMetricList extends StatelessWidget {
                 width: 32,
                 child: Text(
                   '${index + 1}.',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
               Expanded(
@@ -472,18 +486,14 @@ class _HistoryMetricList extends StatelessWidget {
                       '${isMe ? '★ ' : ''}$name',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     if (specialization.isNotEmpty)
                       Text(
                         specialization,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                   ],
                 ),
@@ -494,24 +504,18 @@ class _HistoryMetricList extends StatelessWidget {
                 '(${_historyFormatNumber(rate)})',
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
-                  fontFeatures: [
-                    FontFeature.tabularFigures(),
-                  ],
+                  fontFeatures: [FontFeature.tabularFigures()],
                 ),
               ),
               const SizedBox(width: 10),
               SizedBox(
                 width: 42,
                 child: Text(
-                  '${percent.toStringAsFixed(
-                    percent < 1 ? 1 : 0,
-                  )}%',
+                  '${percent.toStringAsFixed(percent < 1 ? 1 : 0)}%',
                   textAlign: TextAlign.right,
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
-                    fontFeatures: [
-                      FontFeature.tabularFigures(),
-                    ],
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 ),
               ),
@@ -530,16 +534,13 @@ String _historyFormatNumber(num number) {
     final scaled = value / 1000000000;
     return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}B';
   }
-
   if (value >= 1000000) {
     final scaled = value / 1000000;
     return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}M';
   }
-
   if (value >= 1000) {
     final scaled = value / 1000;
     return '${scaled < 100 ? scaled.toStringAsFixed(1) : scaled.toStringAsFixed(0)}K';
   }
-
   return value.toStringAsFixed(0);
 }
