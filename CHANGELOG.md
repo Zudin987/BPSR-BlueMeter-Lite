@@ -2,112 +2,60 @@
 
 All notable user-facing changes to BlueMeter Lite are documented here.
 
-## [Unreleased]
+## [1.4.0] - 2026-08-05
+
+### Performance
+
+- Aligned the main overlay bridge with the two-second overlay renderer
+- Skipped unchanged payload creation and cross-isolate transfer
+- Stopped visible redraws during combat inactivity
+- Cached player ranking and formatted metric text
+- Limited the live overlay to 20 rows while preserving full encounter history
+- Pruned cached Illusion-Breaking Strength values to active encounter players
+
+### Encounter history
+
+- Added local seven-day DPS, Healing, and Tanking encounter history
+- Captured dungeon and map names from exact `WorldNtf.EnterScene` data
+- Read `AttrSceneBasicId` instead of guessing protobuf integer fields
+- Prevented player UIDs from being stored as map IDs
+- Preserved the encounter's scene when leaving or changing maps
+
+### Automatic reset
+
+- Added supported map, channel, line, dungeon, wipe, and phase resets
+- Added an independent Auto Reset Lock
+- Prevented duplicate history saves from grouped transition signals
+
+### Build and maintenance
+
+- Added generated-source validation for location and performance patches
+- Pinned the upstream source and Flutter version
+- Removed obsolete local-build packaging
+- Updated v1.4.0 documentation
+
+## [1.3.2] - 2026-08-05
+
+- Improved map and dungeon transition handling
+- Improved encounter-history saving during resets and shutdown
 
 ## [1.3.1] - 2026-08-04
 
-### Fixed
+- Added reliable map, line, channel, and dungeon transition resets
 
-- Read scene changes from small current-player transition packets
-- Preserve dungeon `lineId = 0`
-- Detect entering and leaving dungeons
-- Reset on map, line, and channel changes
-- Save scene history before replacing the old scene IDs
+## [1.3.0] - 2026-08-04
 
+- Added automatic reset controls and seven-day encounter history
 
-No routine feature development is planned.
+## [1.2.0] - 2026-08-04
 
-## [1.3.0] - TBD
-
-### Added
-
-- Automatic split on channel, line, map and dungeon changes
-- Conservative wipe detection using player revival, teleport and boss reset state
-- Conservative boss phase detection using boss identity and HP resets
-- Auto-reset lock independent from the movement and resize lock
-- Local encounter history in the portrait control app
-- Historical DPS, Healing and Tanking tabs
-- Automatic deletion of history older than seven days
-- Manual deletion of one encounter or all history
-
-### Changed
-
-- Ordinary combat inactivity no longer clears the current meter
-- Manual reset archives the encounter before clearing
-- Stopping the meter archives the active encounter
-
-### Performance
-
-- Reset detection uses lightweight comparisons on packets already parsed
-- History stores compact summaries instead of screenshots or skill timelines
-
-## [1.2.0] - TBD
-
-### Added
-
-- Toggleable DPS, Healing and Tanking tabs
-- Total healing, HPS and healing contribution ranking
-- Total damage received, taken-per-second and tanking contribution ranking
-- Saved selected meter tab
-- Separate lightweight active-time clocks for damage, healing and damage received
-
-### Performance
-
-- Stores only totals and meter-specific timestamps
-- Does not restore heavy skill, target, timeline, overheal, mitigation or death tracking
-- Filters NPC-only entries from the player overlay
+- Added DPS, Healing, and Tanking meters
 
 ## [1.1.0] - 2026-08-04
 
-### Added
-
-- Saved overlay mode, size, position and lock state
-- Lock button that disables both moving and resizing
-- Supported BPSR client detection before VPN startup
-- Clear unsupported-client message
-- Portrait control application
-- About screen with privacy, license, author and upstream revision
-- `by MrEz` creator credit
-- Permanent Android release signing support
-- Automated draft GitHub Release workflow
-- APK checksums and signing-certificate fingerprint assets
-
-### Fixed
-
-- Recreated stale or invisible overlays before VPN startup
-- Prevented old saved coordinates from hiding the overlay
-- Restored header dragging while unlocked
-- Kept resize disabled while locked
-- Corrected remote Illusion-Breaking Strength parsing
-- Corrected Season 3 attribute IDs and sub-profession mappings
-- Centered row text vertically
-- Kept the player list in one scrollable column
-
-### Build and release
-
-- Pinned BlueMeter Mobile to a known working commit
-- Pinned Flutter to a known working version
-- Added exact build metadata to corresponding source
-- Added a permanent signed-release workflow
-
-### Upgrade notice
-
-v1.1.0 is the first release signed with BlueMeter Lite's permanent key. Users of v1.0.0 must uninstall once before installing v1.1.0.
+- Added saved overlay layout, multi-region detection, permanent signing, and
+  automated release builds
 
 ## [1.0.0] - 2026-08-04
 
-### Added
-
-- Live total-damage and DPS ranking
-- Group contribution percentages
-- Compact and Expanded modes
-- Profession and specialization detection
-- Ability Score and Illusion-Breaking Strength
-- Local-player star and row highlight
-- One-column scrolling list
-- Movable and resizable Android overlay
-- Manual encounter reset
-- Android launcher icon
-- Four supported regional BPSR clients
-- BPSR-only local VPN allow-list
-- Lightweight packet, storage and overlay pipeline
+- Initial lightweight Android combat-meter release

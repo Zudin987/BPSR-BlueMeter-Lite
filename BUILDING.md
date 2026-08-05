@@ -1,74 +1,39 @@
 # Building BlueMeter Lite
 
-BlueMeter Lite is maintained as a patch kit on top of BlueMeter Mobile.
+BlueMeter Lite is maintained as a GitHub Actions patch kit on top of a pinned
+BlueMeter Mobile revision.
 
 ## Reproducible inputs
-
-The v1.3.1 build is pinned to:
 
 ```text
 BlueMeter Mobile: 3c9d757cc0fd67971faf18447638c08044fb9b7c
 Flutter:          3.44.7
 Java:             17
-App version:      1.3.1+21
+App version:      1.4.0+23
 ```
 
-The workflow checks out the exact upstream commit rather than whatever happens to be the latest `main` branch.
+## Normal APK build
 
-## Normal GitHub Actions build
+Open **Actions → Build BlueMeter Lite APK → Run workflow**.
 
-Use **Actions → Build BlueMeter Lite APK → Run workflow**.
+GitHub Actions validates the scripts, fetches the pinned upstream source,
+applies the Lite, EnterScene, performance, and release-version patches, verifies
+the generated source, and builds split APKs.
 
-The normal workflow:
-
-1. checks out the pinned upstream commit
-2. applies the Lite patch
-3. verifies the patched version
-4. builds split APKs
-5. verifies APK signatures when signing secrets exist
-6. uploads APK and corresponding-source artifacts for 30 days
+No local Python, terminal, Flutter installation, or PC build is required.
 
 ## Signed GitHub Release
 
-Use **Actions → Publish BlueMeter Lite Release → Run workflow** only after completing [SIGNING-SETUP.md](SIGNING-SETUP.md).
-
-The release workflow defaults to:
+Open **Actions → Publish BlueMeter Lite Release → Run workflow**.
 
 ```text
-Tag:        v1.3.1
+Tag:        v1.4.0
 Draft:      true
 Prerelease: false
 ```
 
-It creates permanent Release assets:
-
-- `BlueMeter-Lite-v1.3.1-arm64-v8a.apk`
-- `BlueMeter-Lite-v1.3.1-armeabi-v7a.apk`
-- `BlueMeter-Lite-v1.3.1-x86_64.apk`
-- `BlueMeter-Lite-v1.3.1-source.zip`
-- `SHA256SUMS.txt`
-- `SIGNING-CERT-SHA256.txt`
-
-Review the draft release, then publish it manually.
-
-## Local Windows build
-
-Requirements:
-
-- Git
-- Python 3
-- Flutter 3.44.7
-- Java 17
-- Android SDK configured for Flutter
-
-Run:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\build-local.ps1
-```
-
-When `private-signing/bluemeter-lite-release.jks` and `private-signing/key.properties` exist, the local build uses the permanent release key. Otherwise it falls back to debug signing.
+The workflow creates architecture-specific APKs, a corresponding-source ZIP,
+checksums, and the signing-certificate fingerprint.
 
 ## Architecture
 
@@ -78,4 +43,5 @@ When `private-signing/bluemeter-lite-release.jks` and `private-signing/key.prope
 
 ## AGPL corresponding source
 
-Every public APK release must include the exact patched source used to build it. The release workflow removes private signing material before creating the source archive.
+Every public APK release includes the exact patched source used for that build.
+Private signing files are removed before the source archive is created.

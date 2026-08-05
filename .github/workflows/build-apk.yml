@@ -59,6 +59,9 @@ jobs:
       - name: Apply ZDPS encounter location patch
         run: python3 patch/apply_zdps_location_patch.py upstream
 
+      - name: Apply final performance update
+        run: python3 patch/apply_performance_update.py upstream
+
       - name: Apply v1.4.0 release version
         run: python3 patch/apply_release_version.py upstream
 
@@ -87,6 +90,10 @@ jobs:
           # Confirm the current low-impact overlay settings reached main.dart.
           grep -q "static const int _maxDisplayedPlayers = 20;" lib/main.dart
           grep -q "static const Duration _overlayRefreshInterval = Duration(seconds: 2);" lib/main.dart
+          grep -q "static const Duration _liteOverlayBridgeInterval" lib/main.dart
+          grep -q "_liteLastOverlayPayloadSignature" lib/main.dart
+          grep -q "_litePruneSeasonStrengthCache" lib/main.dart
+          grep -q "if (payloadSignature == _liteLastOverlayPayloadSignature)" lib/main.dart
           grep -q "static const String _liteVersion = '1.4.0';" lib/main.dart
 
       - name: Set up Java
@@ -185,7 +192,6 @@ jobs:
           mkdir -p upstream/BLUEMETER_LITE_BUILD_KIT
           cp -R patch upstream/BLUEMETER_LITE_BUILD_KIT/
           cp -R .github/workflows upstream/BLUEMETER_LITE_BUILD_KIT/
-          cp build-local.ps1 upstream/BLUEMETER_LITE_BUILD_KIT/
           cp BUILDING.md SIGNING-SETUP.md upstream/BLUEMETER_LITE_BUILD_KIT/
           cp LICENSE LICENSE-NOTICE.md upstream/BLUEMETER_LITE_BUILD_KIT/
 
