@@ -9,7 +9,7 @@ on:
       - ".github/workflows/build-apk.yml"
       - ".github/workflows/release.yml"
       - "patch/**"
-      - "RELEASE-NOTES-v1.3.2.md"
+      - "RELEASE-NOTES-v1.4.0.md"
 
 permissions:
   contents: read
@@ -38,7 +38,8 @@ jobs:
           python3 -m py_compile \
             patch/apply_lite_patch.py \
             patch/apply_zdps_location_patch.py \
-            patch/apply_performance_update.py
+            patch/apply_performance_update.py \
+            patch/apply_release_version.py
 
       - name: Checkout pinned BlueMeter Mobile source
         shell: bash
@@ -58,12 +59,15 @@ jobs:
       - name: Apply ZDPS encounter location patch
         run: python3 patch/apply_zdps_location_patch.py upstream
 
+      - name: Apply v1.4.0 release version
+        run: python3 patch/apply_release_version.py upstream
+
       - name: Verify patched source
         working-directory: upstream
         shell: bash
         run: |
           grep -q "^name:" pubspec.yaml
-          grep -q "^version: 1.3.2+22$" pubspec.yaml
+          grep -q "^version: 1.4.0+23$" pubspec.yaml
           grep -q "^environment:" pubspec.yaml
           grep -q "^dependencies:" pubspec.yaml
           grep -q "^flutter:" pubspec.yaml
@@ -79,6 +83,7 @@ jobs:
           # Confirm the current low-impact overlay settings reached main.dart.
           grep -q "static const int _maxDisplayedPlayers = 20;" lib/main.dart
           grep -q "static const Duration _overlayRefreshInterval = Duration(seconds: 2);" lib/main.dart
+          grep -q "static const String _liteVersion = '1.4.0';" lib/main.dart
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -141,7 +146,7 @@ jobs:
         shell: bash
         run: |
           cat > upstream/BUILD-METADATA.txt <<EOF
-          BlueMeter Lite version: 1.3.2+22
+          BlueMeter Lite version: 1.4.0+23
           Repository commit: $GITHUB_SHA
           Upstream repository: $UPSTREAM_REPOSITORY
           Upstream commit: $UPSTREAM_COMMIT
