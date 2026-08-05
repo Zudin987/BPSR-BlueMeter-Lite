@@ -26,8 +26,11 @@ BPSR combat meter.
 - Saves encounters after supported automatic resets, manual resets, and meter
   shutdown.
 - Adds best-effort location naming from the ZDPS scene catalog.
-- Uses decoded scene data instead of guessing protobuf integer fields, preventing
-  a player UID from being mistaken for a map ID.
+- Registers the exact `WorldNtf.EnterScene` packet used by ZDPS and reads
+  `AttrSceneBasicId` from typed scene attributes.
+- Keeps decoded `SyncContainerData.SceneData` as a fallback and no longer
+  guesses integer fields from Social packets, preventing player UIDs from
+  being mistaken for map IDs.
 - Freezes the detected scene when combat begins so the destination map does not
   rename the encounter that just ended.
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Apply the safe encounter-location fix during GitHub Actions.
+"""Apply exact EnterScene encounter-location capture during GitHub Actions.
 
-The previous version manually guessed the nested SocialNtf protobuf layout and
-could mistake a player UID for a map ID. This version removes that guesswork.
-It uses the already-generated SyncContainerData.SceneData parser, snapshots the
-scene when combat begins, and compiles ZDPS's scene-name table into the app.
+ZDPS reads the map from WorldNtf.EnterScene -> EnterSceneInfo.SceneAttrs ->
+AttrSceneBasicId. BlueMeter Lite mirrors that typed packet path instead of
+relying only on SyncContainerData or guessing fields from SocialNtf packets.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import urllib.request
 from pathlib import Path
@@ -32,14 +32,11 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 def dart_string(value: str) -> str:
-    # JSON strings are valid Dart double-quoted strings after escaping Dart's
-    # interpolation marker.
     return json.dumps(value, ensure_ascii=False).replace("$", r"\$")
 
 
 def load_fallback_catalog(source: Path) -> dict[int, str]:
     text = source.read_text(encoding="utf-8")
-    # Keep a small fallback without adding another parser dependency.
     names: dict[int, str] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -53,8 +50,6 @@ def load_fallback_catalog(source: Path) -> dict[int, str]:
         value = right.strip().rstrip(",")
         if len(value) < 2 or value[0] not in "'\"" or value[-1] != value[0]:
             continue
-        # All fallback labels are simple literals with only one apostrophe in
-        # the double-quoted Skimmer entry.
         names[map_id] = value[1:-1]
     return names
 
@@ -84,7 +79,7 @@ def fetch_zdps_catalog(fallback_source: Path) -> dict[int, str]:
         if names:
             print(f"Loaded {len(names)} scene names from ZDPS SceneTable.json.")
             return names
-    except Exception as exc:  # Network failure must not break APK builds.
+    except Exception as exc:
         print(f"Warning: could not download ZDPS scene table: {exc}")
 
     print(f"Using {len(fallback)} bundled fallback scene names.")
@@ -121,23 +116,14 @@ def patch_storage(path: Path) -> None:
 
     text = replace_once(
         text,
-        "import '../services/encounter_history_service.dart';\n",
-        "import '../services/encounter_history_service.dart';\n"
-        "import '../data/lite_scene_catalog.dart';\n",
-        "scene catalog import",
-    )
-
-    text = replace_once(
-        text,
         """bool _liteSeenFullPlayerContainer = false;
 DateTime? _liteLastMapLoadSignalAt;
 """,
         """bool _liteSeenFullPlayerContainer = false;
 DateTime? _liteLastMapLoadSignalAt;
 
-// Freeze the decoded SyncContainer scene when the encounter starts. This is
-// intentionally separate from _mapId because _mapId can change before the old
-// encounter is written to history.
+// Freeze the exact decoded scene when combat starts. _mapId may change before
+// the encounter that just ended is written to history.
 int _liteEncounterMapId = 0;
 int _liteEncounterChannelId = 0;
 int _liteEncounterLineId = 0;
@@ -145,10 +131,12 @@ int _liteEncounterLineId = 0;
 bool _liteIsDecodedSceneId(int? value) {
   if (value == null || value <= 0) return false;
 
-  // Accept only IDs present in the scene table compiled from ZDPS. This
-  // blocks player UIDs and other unrelated protobuf integers from history.
-  return value != _currentPlayerUuid.toInt() &&
-      LiteSceneCatalog.contains(value);
+  // Callers now provide typed map fields only:
+  // - SyncContainerData.SceneData.mapId
+  // - EnterScene.SceneAttrs AttrSceneBasicId (341)
+  // Do not require the naming catalog here; a newly added game map may not be
+  // listed yet, but its exact typed scene ID is still valid.
+  return value != _currentPlayerUuid.toInt();
 }
 
 void _liteCaptureEncounterSceneIfNeeded() {
@@ -245,9 +233,8 @@ void _liteCaptureEncounterSceneIfNeeded() {
         """  if (receivedMapId) {
     _mapId = mapId!;
 
-    // SceneData can arrive immediately before or just after the first combat
-    // packet. Capture it once and never let a later map transition rename the
-    // encounter that is already in progress.
+    // Capture a typed scene that arrives immediately after combat begins, but
+    // never overwrite a scene already frozen for this encounter.
     if (_liteHasEncounterData) {
       _liteCaptureEncounterSceneIfNeeded();
     }
@@ -259,32 +246,77 @@ void _liteCaptureEncounterSceneIfNeeded() {
     path.write_text(text, encoding="utf-8")
 
 
+def patch_registry(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+
+    text = replace_once(
+        text,
+        "import 'processors/dungeon_snapshot_processor.dart';\n",
+        "import 'processors/dungeon_snapshot_processor.dart';\n"
+        "import 'processors/enter_scene_processor.dart';\n",
+        "EnterScene processor import",
+    )
+
+    text = replace_once(
+        text,
+        "  static const int _methodSyncDungeonData = 0x00000017;\n",
+        "  static const int _methodSyncDungeonData = 0x00000017;\n"
+        "  static const int _methodEnterScene = 0x00000003;\n",
+        "EnterScene method ID",
+    )
+
+    text = replace_once(
+        text,
+        "    _processors[_methodSyncDungeonData] = DungeonSnapshotProcessor(storage);\n",
+        "    _processors[_methodSyncDungeonData] = DungeonSnapshotProcessor(storage);\n"
+        "    _processors[_methodEnterScene] = EnterSceneProcessor(storage);\n",
+        "EnterScene registration",
+    )
+
+    path.write_text(text, encoding="utf-8")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         fail("usage: apply_zdps_location_patch.py <upstream-directory>")
 
     upstream = Path(sys.argv[1]).resolve()
     patch_dir = Path(__file__).resolve().parent
+
     storage = upstream / "lib/core/state/data_storage.dart"
+    registry = upstream / "lib/core/analyze/message_handler_registry.dart"
+    processor_destination = (
+        upstream / "lib/core/analyze/processors/enter_scene_processor.dart"
+    )
     catalog_destination = upstream / "lib/core/data/lite_scene_catalog.dart"
     history_destination = upstream / "lib/views/encounter_history_view.dart"
+
+    processor_source = patch_dir / "enter_scene_processor.dart"
     catalog_source = patch_dir / "lite_scene_catalog.dart"
     history_source = patch_dir / "encounter_history_view.dart"
 
-    for required in (storage, catalog_source, history_source):
+    for required in (
+        storage,
+        registry,
+        processor_source,
+        catalog_source,
+        history_source,
+    ):
         if not required.exists():
             fail(f"missing required file: {required}")
 
     write_catalog(catalog_destination, catalog_source)
     patch_storage(storage)
-    history_destination.parent.mkdir(parents=True, exist_ok=True)
-    history_destination.write_text(
-        history_source.read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
+    patch_registry(registry)
 
-    print("Safe SyncContainer encounter-location patch applied.")
-    print("Manual SocialNtf protobuf guessing is disabled.")
+    processor_destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(processor_source, processor_destination)
+
+    history_destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(history_source, history_destination)
+
+    print("Exact WorldNtf.EnterScene encounter-location patch applied.")
+    print("Scene map ID source: SceneAttrs AttrSceneBasicId (341).")
 
 
 if __name__ == "__main__":
