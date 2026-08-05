@@ -99,8 +99,12 @@ jobs:
           # Encounter-location patch output and safety checks.
           test -f lib/core/data/lite_scene_catalog.dart
           test -f lib/views/encounter_history_view.dart
-          grep -q "LiteSceneCatalog.contains" lib/core/state/data_storage.dart
+          test -f lib/core/analyze/processors/enter_scene_processor.dart
           grep -q "_liteCaptureEncounterSceneIfNeeded" lib/core/state/data_storage.dart
+          grep -q "return value != _currentPlayerUuid.toInt();" lib/core/state/data_storage.dart
+          grep -q "_methodEnterScene = 0x00000003" lib/core/analyze/message_handler_registry.dart
+          grep -q "EnterSceneProcessor(storage)" lib/core/analyze/message_handler_registry.dart
+          grep -q "_attrSceneBasicId = 341" lib/core/analyze/processors/enter_scene_processor.dart
           ! grep -q "_LiteSocialSceneDecoder" lib/core/analyze/message_analyzer_v2.dart
 
           # Confirm the current low-impact overlay settings reached main.dart.
