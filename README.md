@@ -153,10 +153,10 @@ Combat information is processed locally on your Android device. BlueMeter Lite a
 <details>
 <summary><strong>Credits and licence</strong></summary>
 
-- Based on [BlueMeter Mobile](https://github.com/jbourny/bluemetermobile)
-- Uses protocol and profession references from [BPSR-ZDPS](https://github.com/Blue-Protocol-Source/BPSR-ZDPS)
+- Modified derivative of [BlueMeter Mobile](https://github.com/jbourny/bluemetermobile), licensed under GNU AGPL v3
+- Uses scene data, profession mappings and protocol references from [BPSR-ZDPS](https://github.com/Blue-Protocol-Source/BPSR-ZDPS), licensed under MIT
 - Distributed under the [GNU AGPL-3.0 licence](LICENSE)
-- See [LICENSE-NOTICE.md](LICENSE-NOTICE.md) for source-distribution requirements
+- See [LICENSE-NOTICE.md](LICENSE-NOTICE.md) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
 
 Blue Protocol: Star Resonance and related names belong to their respective owners.
 

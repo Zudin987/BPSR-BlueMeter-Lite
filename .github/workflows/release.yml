@@ -221,7 +221,7 @@ jobs:
           cp -R patch upstream/BLUEMETER_LITE_BUILD_KIT/
           cp -R .github/workflows upstream/BLUEMETER_LITE_BUILD_KIT/
           cp BUILDING.md SIGNING-SETUP.md upstream/BLUEMETER_LITE_BUILD_KIT/
-          cp LICENSE LICENSE-NOTICE.md upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp LICENSE LICENSE-NOTICE.md THIRD-PARTY-NOTICES.md upstream/BLUEMETER_LITE_BUILD_KIT/
           cp RELEASE-NOTES-v1.4.1.md upstream/BLUEMETER_LITE_BUILD_KIT/
 
           (
