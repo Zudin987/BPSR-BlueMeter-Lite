@@ -51,6 +51,12 @@ class _OverlayWidgetState extends State<OverlayWidget> {
   Size? _resizeStartSize;
   Offset? _resizeStartPointer;
 
+  // Performance: coalesce overlay-isolate events and avoid rebuilding the
+  // complete player list when the visible payload has not changed.
+  Timer? _liteUiFlushTimer;
+  Map<String, dynamic>? _litePendingPayload;
+  String _liteLastUiSignature = '';
+
   @override
   void initState() {
     super.initState();
@@ -58,27 +64,14 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     _overlaySubscription = FlutterOverlayWindow.overlayListener.listen((event) {
       if (!mounted || event is! Map) return;
 
-      final rawPlayers = event['players'];
-      final rawCombatTime = event['combatTime'];
-      final rawAutoResetLocked = event['autoResetLocked'];
+      _litePendingPayload = Map<String, dynamic>.from(event);
 
-      setState(() {
-        if (rawPlayers is List) {
-          _players = rawPlayers
-              .whereType<Map>()
-              .map((entry) => Map<String, dynamic>.from(entry))
-              .toList(growable: false);
-        }
-
-        if (rawCombatTime is num) {
-          _combatTime = rawCombatTime.toInt();
-        }
-
-        if (rawAutoResetLocked is bool) {
-          _autoResetLocked = rawAutoResetLocked;
-        }
-      });
-
+      // Combine bursts into one inexpensive update. The main bridge already
+      // runs at a low rate, while this also protects against duplicate events.
+      _liteUiFlushTimer ??= Timer(
+        const Duration(milliseconds: 250),
+        _flushLiteUiPayload,
+      );
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -86,8 +79,49 @@ class _OverlayWidgetState extends State<OverlayWidget> {
     });
   }
 
+  void _flushLiteUiPayload() {
+    _liteUiFlushTimer = null;
+    final payload = _litePendingPayload;
+    _litePendingPayload = null;
+
+    if (!mounted || payload == null) return;
+
+    // combatTime changes every second, so compare player and lock data only.
+    // The timer text can update without rebuilding identical player maps.
+    final rawPlayers = payload['players'];
+    final rawCombatTime = payload['combatTime'];
+    final rawAutoResetLocked = payload['autoResetLocked'];
+    final signature = '${rawPlayers.toString()}|$rawAutoResetLocked';
+    final playerDataChanged = signature != _liteLastUiSignature;
+    final nextCombatTime = rawCombatTime is num
+        ? rawCombatTime.toInt()
+        : _combatTime;
+    final timeChanged = nextCombatTime != _combatTime;
+
+    if (!playerDataChanged && !timeChanged) return;
+    if (playerDataChanged) _liteLastUiSignature = signature;
+
+    setState(() {
+      if (playerDataChanged && rawPlayers is List) {
+        _players = rawPlayers
+            .whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList(growable: false);
+      }
+
+      _combatTime = nextCombatTime;
+
+      if (rawAutoResetLocked is bool) {
+        _autoResetLocked = rawAutoResetLocked;
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _liteUiFlushTimer?.cancel();
+    _liteUiFlushTimer = null;
+    _litePendingPayload = null;
     _overlaySubscription?.cancel();
     super.dispose();
   }
