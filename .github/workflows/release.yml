@@ -74,6 +74,9 @@ jobs:
       - name: Apply Lite patch
         run: python3 patch/apply_lite_patch.py upstream
 
+      - name: Apply ZDPS encounter location patch
+        run: python3 patch/apply_zdps_location_patch.py upstream
+
       - name: Verify release version
         working-directory: upstream
         shell: bash
