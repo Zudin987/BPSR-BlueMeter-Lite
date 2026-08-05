@@ -70,6 +70,13 @@ String _historyTitle(LiteEncounterHistory encounter) {
   final bossName = encounter.bossName.trim();
   if (bossName.isNotEmpty) return bossName;
 
+  // A saved map ID is more useful than the reset trigger. This fallback also
+  // exposes unknown IDs so they can be added to the scene table later instead
+  // of incorrectly labelling the encounter only as "Map change".
+  if (encounter.mapId > 0) {
+    return 'Unknown location (Map ${encounter.mapId})';
+  }
+
   return _historyReasonLabel(encounter.reason);
 }
 
