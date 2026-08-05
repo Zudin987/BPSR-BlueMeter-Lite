@@ -267,7 +267,7 @@ def main() -> None:
     patch_dir = Path(__file__).resolve().parent
     storage = upstream / "lib/core/state/data_storage.dart"
     catalog_destination = upstream / "lib/core/data/lite_scene_catalog.dart"
-    history_destination = upstream / "lib/view/encounter_history_view.dart"
+    history_destination = upstream / "lib/views/encounter_history_view.dart"
     catalog_source = patch_dir / "lite_scene_catalog.dart"
     history_source = patch_dir / "encounter_history_view.dart"
 
@@ -277,6 +277,7 @@ def main() -> None:
 
     write_catalog(catalog_destination, catalog_source)
     patch_storage(storage)
+    history_destination.parent.mkdir(parents=True, exist_ok=True)
     history_destination.write_text(
         history_source.read_text(encoding="utf-8"),
         encoding="utf-8",
