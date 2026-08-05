@@ -9,7 +9,7 @@ on:
       - ".github/workflows/build-apk.yml"
       - ".github/workflows/release.yml"
       - "patch/**"
-      - "RELEASE-NOTES-v1.4.0.md"
+      - "RELEASE-NOTES-v1.4.1.md"
 
 permissions:
   contents: read
@@ -62,7 +62,7 @@ jobs:
       - name: Apply final performance update
         run: python3 patch/apply_performance_update.py upstream
 
-      - name: Apply v1.4.0 release version
+      - name: Apply v1.4.1 release version
         run: python3 patch/apply_release_version.py upstream
 
       - name: Verify patched source
@@ -70,7 +70,7 @@ jobs:
         shell: bash
         run: |
           grep -q "^name:" pubspec.yaml
-          grep -q "^version: 1.4.0+23$" pubspec.yaml
+          grep -q "^version: 1.4.1+24$" pubspec.yaml
           grep -q "^environment:" pubspec.yaml
           grep -q "^dependencies:" pubspec.yaml
           grep -q "^flutter:" pubspec.yaml
@@ -94,7 +94,7 @@ jobs:
           grep -q "_liteLastOverlayPayloadSignature" lib/main.dart
           grep -q "_litePruneSeasonStrengthCache" lib/main.dart
           grep -q "if (payloadSignature == _liteLastOverlayPayloadSignature)" lib/main.dart
-          grep -q "static const String _liteVersion = '1.4.0';" lib/main.dart
+          grep -q "static const String _liteVersion = '1.4.1';" lib/main.dart
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -157,7 +157,7 @@ jobs:
         shell: bash
         run: |
           cat > upstream/BUILD-METADATA.txt <<EOF
-          BlueMeter Lite version: 1.4.0+23
+          BlueMeter Lite version: 1.4.1+24
           Repository commit: $GITHUB_SHA
           Upstream repository: $UPSTREAM_REPOSITORY
           Upstream commit: $UPSTREAM_COMMIT

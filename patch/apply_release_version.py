@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Apply the BlueMeter Lite release version to generated upstream source.
 
-This script is run only by GitHub Actions after the normal Lite and encounter
-location patches. Users do not need Python or a local build environment.
+This script is run only by GitHub Actions. No local Python or PC build is
+required.
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ import re
 import sys
 from pathlib import Path
 
-VERSION_NAME = "1.4.0"
-VERSION_CODE = 23
+VERSION_NAME = "1.4.1"
+VERSION_CODE = 24
 
 
 def fail(message: str) -> None:

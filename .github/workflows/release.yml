@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag
         required: true
-        default: "v1.4.0"
+        default: "v1.4.1"
         type: string
       draft:
         description: Create as draft for review
@@ -26,8 +26,8 @@ env:
   UPSTREAM_REPOSITORY: https://github.com/jbourny/bluemetermobile.git
   UPSTREAM_COMMIT: 3c9d757cc0fd67971faf18447638c08044fb9b7c
   FLUTTER_VERSION: "3.44.7"
-  EXPECTED_VERSION_NAME: "1.4.0"
-  EXPECTED_VERSION_CODE: "23"
+  EXPECTED_VERSION_NAME: "1.4.1"
+  EXPECTED_VERSION_CODE: "24"
   ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
   ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
   ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -89,7 +89,7 @@ jobs:
       - name: Apply final performance update
         run: python3 patch/apply_performance_update.py upstream
 
-      - name: Apply v1.4.0 release version
+      - name: Apply v1.4.1 release version
         run: python3 patch/apply_release_version.py upstream
 
       - name: Verify patched release source
@@ -117,7 +117,7 @@ jobs:
           grep -q "_liteLastOverlayPayloadSignature" lib/main.dart
           grep -q "_litePruneSeasonStrengthCache" lib/main.dart
           grep -q "if (payloadSignature == _liteLastOverlayPayloadSignature)" lib/main.dart
-          grep -q "static const String _liteVersion = '1.4.0';" lib/main.dart
+          grep -q "static const String _liteVersion = '1.4.1';" lib/main.dart
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -222,7 +222,7 @@ jobs:
           cp -R .github/workflows upstream/BLUEMETER_LITE_BUILD_KIT/
           cp BUILDING.md SIGNING-SETUP.md upstream/BLUEMETER_LITE_BUILD_KIT/
           cp LICENSE LICENSE-NOTICE.md upstream/BLUEMETER_LITE_BUILD_KIT/
-          cp RELEASE-NOTES-v1.4.0.md upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp RELEASE-NOTES-v1.4.1.md upstream/BLUEMETER_LITE_BUILD_KIT/
 
           (
             cd upstream
@@ -246,7 +246,7 @@ jobs:
             dist/*
             --target "$GITHUB_SHA"
             --title "BlueMeter Lite $RELEASE_TAG"
-            --notes-file RELEASE-NOTES-v1.4.0.md
+            --notes-file RELEASE-NOTES-v1.4.1.md
           )
 
           if [ "$CREATE_DRAFT" = "true" ]; then
