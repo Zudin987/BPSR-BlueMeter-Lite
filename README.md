@@ -7,7 +7,7 @@ It is an independently maintained fork of BlueMeter Mobile, with added multi-reg
 
 This is an unofficial open-source community project and is not affiliated with the game’s developers or publishers.
 
-[**Download the latest APK**](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest)
+**Please check the Releases section on the right side of this repository for the latest versions.**
 
 </div>
 
@@ -16,7 +16,7 @@ This is an unofficial open-source community project and is not affiliated with t
 
 ## Quick start
 
-1. Download the latest APK. Most modern phones should use **arm64-v8a**.
+1. Go to the **Releases** tab on GitHub and download the latest release. Most modern phones should use **arm64-v8a**.
 2. Install and open **BlueMeter Lite**.
 3. Tap **Start DPS Meter**.
 4. Allow **Display over other apps**.
@@ -73,7 +73,7 @@ Open the main BlueMeter Lite app and tap **Encounter history** to review them. H
 Example expanded row:
 
 ```text
-01. ★ Player — Frostbeam (49,632 + 2,250)   2.8M (79.9K)   23%
+01. ★ Player — Frostbeam (49,632 + 2,250)  2.8M (79.9K)  23%
 ```
 
 - `01` — ranking
