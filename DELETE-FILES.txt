@@ -1,3 +1,0 @@
-Delete this obsolete repository file:
-
-build-local.ps1
