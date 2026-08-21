@@ -2,12 +2,29 @@
 upstream/
 build-output/
 dist/
+build/
+.dart_tool/
+.gradle/
+android/.gradle/
 
 # Permanent signing material — never commit
 private-signing/
 *.jks
 *.keystore
+*.pem
+*.key
+*.p12
+*.pfx
 key.properties
+.env
+.env.*
+!.env.example
+
+# Temporary / local output
+*.log
+*.tmp
+*.bak
+coverage/
 
 # Local/editor files
 .DS_Store
@@ -15,4 +32,4 @@ Thumbs.db
 .vscode/
 .idea/
 __pycache__/
-*.pyc
+*.py[cod]
