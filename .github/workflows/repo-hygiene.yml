@@ -26,6 +26,26 @@ jobs:
             exit 1
           fi
 
+      - name: Block signing material and credential files
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden="$(git ls-files | grep -Ei '(^|/)\.env($|\.)|\.(jks|keystore|pem|key|p12|pfx)$|(^|/)key\.properties$' || true)"
+          if [[ -n "$forbidden" ]]; then
+            echo "::error::Signing material or credential files must not be committed."
+            printf '%s\n' "$forbidden"
+            exit 1
+          fi
+
+      - name: Block obvious committed secret material
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nEI -- '-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}' -- . ':!.github/workflows/repo-hygiene.yml' 2>/dev/null; then
+            echo "::error::Possible secret material detected in tracked source."
+            exit 1
+          fi
+
       - name: Block direct binary links in README
         shell: bash
         run: |
