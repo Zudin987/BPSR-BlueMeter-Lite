@@ -13,10 +13,11 @@ import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
 import java.nio.channels.SocketChannel
 import java.util.ArrayDeque
-import java.util.concurrent.ConcurrentHashMap
+import java.util.HashMap
 
 class TcpProxy(
     private val vpnService: VpnService,
+    private val selector: Selector,
     private val bufferProvider: (Int) -> ByteBuffer,
     private val onDataReceived: (String, ByteArray) -> Unit
 ) {
@@ -26,8 +27,7 @@ class TcpProxy(
         private const val MAX_PENDING_BYTES = 4 * 1024 * 1024
     }
 
-    private val selector: Selector = Selector.open()
-    private val sessions = ConcurrentHashMap<SessionKey, Session>()
+    private val sessions = HashMap<SessionKey, Session>()
     private val readBuffer = ByteBuffer.allocate(65536)
 
     data class SessionKey(
@@ -70,7 +70,6 @@ class TcpProxy(
                     val connected = channel.connect(
                         InetSocketAddress(ipToString(packet.destIpInt), packet.destPort)
                     )
-
                     val ops = if (connected) {
                         SelectionKey.OP_READ
                     } else {
@@ -85,6 +84,8 @@ class TcpProxy(
                             session,
                             Packet.TCP_SYN or Packet.TCP_ACK,
                             null,
+                            0,
+                            0,
                             outputQueue
                         )
                         session.mySeq++
@@ -108,8 +109,10 @@ class TcpProxy(
 
         if (packet.flags and Packet.TCP_FIN != 0) {
             session.state = SessionState.FIN_WAIT
-            session.clientSeq = packet.seqNum + 1
-            sendTcpPacket(session, Packet.TCP_ACK, null, outputQueue)
+            if (packet.seqNum >= session.clientSeq) {
+                session.clientSeq = packet.seqNum + 1
+            }
+            sendTcpPacket(session, Packet.TCP_ACK, null, 0, 0, outputQueue)
             closeSession(key, session, notify = true)
             return
         }
@@ -119,24 +122,51 @@ class TcpProxy(
         }
 
         val backingBuffer = packet.backingBuffer ?: return
-        val payload = ByteArray(packet.payloadSize)
 
-        try {
-            backingBuffer.position(packet.ipHeaderLength + packet.tcpHeaderLength)
-            backingBuffer.get(payload)
-
-            if (session.pendingBytes + payload.size > MAX_PENDING_BYTES) {
-                Log.w(TAG, "Closing overloaded TCP session: $key")
-                sendTcpPacket(session, Packet.TCP_RST, null, outputQueue)
-                closeSession(key, session, notify = true)
+        // The proxy terminates the app-facing TCP stream. Do not forward an
+        // out-of-order segment and never duplicate bytes from a retransmission.
+        // ACKing the last contiguous byte naturally asks Android's TCP stack to
+        // retransmit a missing segment.
+        val overlap = when {
+            packet.seqNum > session.clientSeq -> {
+                sendTcpPacket(session, Packet.TCP_ACK, null, 0, 0, outputQueue)
                 return
             }
+            packet.seqNum < session.clientSeq -> {
+                (session.clientSeq - packet.seqNum)
+                    .coerceAtMost(packet.payloadSize.toLong())
+                    .toInt()
+            }
+            else -> 0
+        }
 
+        val payloadLength = packet.payloadSize - overlap
+        if (payloadLength <= 0) {
+            sendTcpPacket(session, Packet.TCP_ACK, null, 0, 0, outputQueue)
+            return
+        }
+
+        if (session.pendingBytes + payloadLength > MAX_PENDING_BYTES) {
+            Log.w(TAG, "Closing overloaded TCP session: $key")
+            sendTcpPacket(session, Packet.TCP_RST, null, 0, 0, outputQueue)
+            closeSession(key, session, notify = true)
+            return
+        }
+
+        val payload = ByteArray(payloadLength)
+        try {
+            backingBuffer.position(
+                packet.ipHeaderLength + packet.tcpHeaderLength + overlap
+            )
+            backingBuffer.get(payload)
+
+            // One payload allocation is retained until the non-blocking remote
+            // socket accepts it. No additional per-segment copies are made.
             session.pendingWrites.addLast(ByteBuffer.wrap(payload))
-            session.pendingBytes += payload.size
+            session.pendingBytes += payloadLength
+            session.clientSeq += payloadLength
 
-            session.clientSeq += packet.payloadSize
-            sendTcpPacket(session, Packet.TCP_ACK, null, outputQueue)
+            sendTcpPacket(session, Packet.TCP_ACK, null, 0, 0, outputQueue)
             onDataReceived("UP:$key", payload)
 
             if (session.state == SessionState.ESTABLISHED) {
@@ -148,95 +178,104 @@ class TcpProxy(
         }
     }
 
-    fun poll(outputQueue: java.util.Queue<ByteBuffer>) {
-        if (selector.selectNow() == 0) return
+    /** Handle one SocketChannel key selected by PacketCaptureService. */
+    fun handleSelectedKey(
+        selectionKey: SelectionKey,
+        outputQueue: java.util.Queue<ByteBuffer>
+    ) {
+        if (!selectionKey.isValid) return
 
-        val iterator = selector.selectedKeys().iterator()
-        while (iterator.hasNext()) {
-            val selectionKey = iterator.next()
-            iterator.remove()
+        val session = selectionKey.attachment() as? Session ?: return
+        val sessionKey = SessionKey(
+            session.sourceIp,
+            session.sourcePort,
+            session.destIp,
+            session.destPort
+        )
 
-            if (!selectionKey.isValid) continue
+        try {
+            val channel = selectionKey.channel() as SocketChannel
 
-            val session = selectionKey.attachment() as Session
-            val sessionKey = SessionKey(
-                session.sourceIp,
-                session.sourcePort,
-                session.destIp,
-                session.destPort
-            )
-
-            try {
-                val channel = selectionKey.channel() as SocketChannel
-
-                if (selectionKey.isConnectable) {
-                    if (channel.finishConnect()) {
-                        session.state = SessionState.ESTABLISHED
-                        selectionKey.interestOps(
-                            SelectionKey.OP_READ or
-                                if (session.pendingWrites.isNotEmpty()) {
-                                    SelectionKey.OP_WRITE
-                                } else {
-                                    0
-                                }
-                        )
-
-                        sendTcpPacket(
-                            session,
-                            Packet.TCP_SYN or Packet.TCP_ACK,
-                            null,
-                            outputQueue
-                        )
-                        session.mySeq++
-                    }
-                }
-
-                if (selectionKey.isValid && selectionKey.isWritable) {
-                    drainPendingWrites(selectionKey, session)
-                }
-
-                if (selectionKey.isValid && selectionKey.isReadable) {
-                    readBuffer.clear()
-                    val read = channel.read(readBuffer)
-
-                    if (read == -1) {
-                        sendTcpPacket(
-                            session,
-                            Packet.TCP_FIN or Packet.TCP_ACK,
-                            null,
-                            outputQueue
-                        )
-                        closeSession(sessionKey, session, notify = true)
-                    } else if (read > 0) {
-                        readBuffer.flip()
-                        val data = ByteArray(read)
-                        readBuffer.get(data)
-
-                        onDataReceived(sessionKey.toString(), data)
-
-                        var offset = 0
-                        while (offset < data.size) {
-                            val chunkSize = minOf(MSS, data.size - offset)
-                            val chunk = data.copyOfRange(offset, offset + chunkSize)
-                            val flags = if (offset + chunkSize >= data.size) {
-                                Packet.TCP_ACK or Packet.TCP_PSH
+            if (selectionKey.isConnectable) {
+                if (channel.finishConnect()) {
+                    session.state = SessionState.ESTABLISHED
+                    selectionKey.interestOps(
+                        SelectionKey.OP_READ or
+                            if (session.pendingWrites.isNotEmpty()) {
+                                SelectionKey.OP_WRITE
                             } else {
-                                Packet.TCP_ACK
+                                0
                             }
+                    )
 
-                            sendTcpPacket(session, flags, chunk, outputQueue)
-                            session.mySeq += chunkSize
-                            offset += chunkSize
+                    sendTcpPacket(
+                        session,
+                        Packet.TCP_SYN or Packet.TCP_ACK,
+                        null,
+                        0,
+                        0,
+                        outputQueue
+                    )
+                    session.mySeq++
+                }
+            }
+
+            if (selectionKey.isValid && selectionKey.isWritable) {
+                drainPendingWrites(selectionKey, session)
+            }
+
+            if (selectionKey.isValid && selectionKey.isReadable) {
+                readBuffer.clear()
+                val read = channel.read(readBuffer)
+
+                if (read == -1) {
+                    sendTcpPacket(
+                        session,
+                        Packet.TCP_FIN or Packet.TCP_ACK,
+                        null,
+                        0,
+                        0,
+                        outputQueue
+                    )
+                    closeSession(sessionKey, session, notify = true)
+                } else if (read > 0) {
+                    readBuffer.flip()
+                    val data = ByteArray(read)
+                    readBuffer.get(data)
+
+                    // The same server-read array is used for the analyzer bridge
+                    // and every 1400-byte TUN segment. The old proxy allocated a
+                    // second ByteArray for each segment via copyOfRange().
+                    onDataReceived(sessionKey.toString(), data)
+
+                    var offset = 0
+                    while (offset < data.size) {
+                        val chunkSize = minOf(MSS, data.size - offset)
+                        val flags = if (offset + chunkSize >= data.size) {
+                            Packet.TCP_ACK or Packet.TCP_PSH
+                        } else {
+                            Packet.TCP_ACK
                         }
+
+                        sendTcpPacket(
+                            session,
+                            flags,
+                            data,
+                            offset,
+                            chunkSize,
+                            outputQueue
+                        )
+                        session.mySeq += chunkSize
+                        offset += chunkSize
                     }
                 }
-            } catch (e: IOException) {
-                Log.w(TAG, "TCP selector failure: $sessionKey — ${e.message}")
-                closeSession(sessionKey, session, notify = true)
-            } catch (e: Exception) {
-                Log.w(TAG, "TCP session failure: $sessionKey — ${e.message}")
-                closeSession(sessionKey, session, notify = true)
             }
+        } catch (e: IOException) {
+            Log.w(TAG, "TCP selector failure: $sessionKey — ${e.message}")
+            closeSession(sessionKey, session, notify = true)
+        } catch (e: Exception) {
+            Log.w(TAG, "TCP session failure: $sessionKey — ${e.message}")
+            closeSession(sessionKey, session, notify = true)
         }
     }
 
@@ -244,7 +283,9 @@ class TcpProxy(
         val channel = session.channel ?: return
         val key = channel.keyFor(selector) ?: return
         if (!key.isValid) return
-        key.interestOps(key.interestOps() or SelectionKey.OP_WRITE or SelectionKey.OP_READ)
+        key.interestOps(
+            key.interestOps() or SelectionKey.OP_WRITE or SelectionKey.OP_READ
+        )
     }
 
     private fun drainPendingWrites(key: SelectionKey, session: Session) {
@@ -252,26 +293,16 @@ class TcpProxy(
 
         while (session.pendingWrites.isNotEmpty()) {
             val buffer = session.pendingWrites.peekFirst()
-            val before = buffer.remaining()
             val written = channel.write(buffer)
 
             if (written < 0) {
                 throw IOException("Remote socket closed during write")
             }
+            if (written == 0) break
 
-            if (written > 0) {
-                session.pendingBytes -= written
-            }
-
-            if (buffer.hasRemaining()) {
-                break
-            }
-
+            session.pendingBytes -= written
+            if (buffer.hasRemaining()) break
             session.pendingWrites.removeFirst()
-
-            if (before == 0) {
-                continue
-            }
         }
 
         if (key.isValid) {
@@ -282,6 +313,14 @@ class TcpProxy(
             }
             key.interestOps(SelectionKey.OP_READ or writeFlag)
         }
+    }
+
+    fun closeAll() {
+        val snapshot = sessions.entries.toList()
+        for ((key, session) in snapshot) {
+            closeSession(key, session, notify = false)
+        }
+        sessions.clear()
     }
 
     private fun closeSession(
@@ -315,10 +354,11 @@ class TcpProxy(
         session: Session,
         flags: Int,
         data: ByteArray?,
+        dataOffset: Int,
+        dataSize: Int,
         outputQueue: java.util.Queue<ByteBuffer>
     ) {
-        val dataSize = data?.size ?: 0
-        val bufferSize = if (dataSize + 100 > 2048) dataSize + 100 else 2048
+        val bufferSize = maxOf(2048, dataSize + 100)
         val buffer = bufferProvider(bufferSize)
 
         buffer.put(0, 0x45.toByte())
@@ -343,9 +383,9 @@ class TcpProxy(
         buffer.putShort(ipHeaderLen + 16, 0)
         buffer.putShort(ipHeaderLen + 18, 0)
 
-        if (data != null) {
+        if (data != null && dataSize > 0) {
             buffer.position(ipHeaderLen + 20)
-            buffer.put(data)
+            buffer.put(data, dataOffset, dataSize)
         }
 
         val totalLen = ipHeaderLen + 20 + dataSize
@@ -387,13 +427,8 @@ class TcpProxy(
     }
 
     private fun ipToString(ip: Int): String {
-        return String.format(
-            "%d.%d.%d.%d",
-            (ip shr 24) and 0xFF,
-            (ip shr 16) and 0xFF,
-            (ip shr 8) and 0xFF,
-            ip and 0xFF
-        )
+        return "${(ip ushr 24) and 0xFF}.${(ip ushr 16) and 0xFF}." +
+            "${(ip ushr 8) and 0xFF}.${ip and 0xFF}"
     }
 
     data class Session(

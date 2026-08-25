@@ -2,6 +2,17 @@ name: Build BlueMeter Lite APK
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-apk.yml"
+      - ".github/workflows/release.yml"
+      - "patch/**"
+      - "RELEASE-NOTES-v1.5.0.md"
+      - "README.md"
+      - "LICENSE-NOTICE.md"
+      - "THIRD-PARTY-NOTICES.md"
   push:
     branches:
       - main
@@ -9,7 +20,7 @@ on:
       - ".github/workflows/build-apk.yml"
       - ".github/workflows/release.yml"
       - "patch/**"
-      - "RELEASE-NOTES-v1.4.1.md"
+      - "RELEASE-NOTES-v1.5.0.md"
       - "README.md"
       - "LICENSE-NOTICE.md"
       - "THIRD-PARTY-NOTICES.md"
@@ -42,7 +53,10 @@ jobs:
             patch/apply_lite_patch.py \
             patch/apply_zdps_location_patch.py \
             patch/apply_performance_update.py \
-            patch/apply_release_version.py
+            patch/normalize_generated_source.py \
+            patch/apply_engine_optimizations.py \
+            patch/apply_release_version.py \
+            patch/verify_ultra_low_impact.py
 
       - name: Checkout pinned BlueMeter Mobile source
         shell: bash
@@ -62,10 +76,16 @@ jobs:
       - name: Apply ZDPS encounter location patch
         run: python3 patch/apply_zdps_location_patch.py upstream
 
-      - name: Apply final performance update
+      - name: Apply overlay bridge performance update
         run: python3 patch/apply_performance_update.py upstream
 
-      - name: Apply v1.4.1 release version
+      - name: Normalize generated Lite source
+        run: python3 patch/normalize_generated_source.py upstream
+
+      - name: Apply ultra-low-impact engine update
+        run: python3 patch/apply_engine_optimizations.py upstream
+
+      - name: Apply v1.5.0 release version
         run: python3 patch/apply_release_version.py upstream
 
       - name: Verify patched source
@@ -73,7 +93,7 @@ jobs:
         shell: bash
         run: |
           grep -q "^name:" pubspec.yaml
-          grep -q "^version: 1.4.1+24$" pubspec.yaml
+          grep -q "^version: 1.5.0+25$" pubspec.yaml
           grep -q "^environment:" pubspec.yaml
           grep -q "^dependencies:" pubspec.yaml
           grep -q "^flutter:" pubspec.yaml
@@ -90,14 +110,19 @@ jobs:
           grep -q "_attrSceneBasicId = 341" lib/core/analyze/processors/enter_scene_processor.dart
           ! grep -q "_LiteSocialSceneDecoder" lib/core/analyze/message_analyzer_v2.dart
 
-          # Confirm the current low-impact overlay settings reached main.dart.
+          # Core Lite functionality retained.
           grep -q "static const int _maxDisplayedPlayers = 20;" lib/main.dart
-          grep -q "static const Duration _overlayRefreshInterval = Duration(seconds: 2);" lib/main.dart
-          grep -q "static const Duration _liteOverlayBridgeInterval" lib/main.dart
           grep -q "_liteLastOverlayPayloadSignature" lib/main.dart
           grep -q "_litePruneSeasonStrengthCache" lib/main.dart
           grep -q "if (payloadSignature == _liteLastOverlayPayloadSignature)" lib/main.dart
-          grep -q "static const String _liteVersion = '1.4.1';" lib/main.dart
+          grep -q "static const String _liteVersion = '1.5.0';" lib/main.dart
+          grep -q "_LiteMeterType.damage" lib/main.dart
+          grep -q "_LiteMeterType.healing" lib/main.dart
+          grep -q "_LiteMeterType.tanking" lib/main.dart
+          test -f test/lite_performance_test.dart
+
+      - name: Verify ultra-low-impact invariants
+        run: python3 patch/verify_ultra_low_impact.py upstream
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -129,7 +154,9 @@ jobs:
           test -n "$ANDROID_KEY_ALIAS"
           test -n "$ANDROID_KEY_PASSWORD"
 
-          printf '%s' "$ANDROID_KEYSTORE_BASE64"             | base64 --decode             > upstream/android/app/bluemeter-lite-release.jks
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > upstream/android/app/bluemeter-lite-release.jks
 
           cat > upstream/android/key.properties <<EOF
           storePassword=$ANDROID_KEYSTORE_PASSWORD
@@ -141,6 +168,22 @@ jobs:
       - name: Install dependencies
         working-directory: upstream
         run: flutter pub get
+
+      - name: Analyze generated runtime files
+        working-directory: upstream
+        run: |
+          flutter analyze --no-fatal-infos \
+            lib/main.dart \
+            lib/core/analyze/packet_analyzer_v2.dart \
+            lib/core/analyze/message_analyzer_v2.dart \
+            lib/core/state/data_storage.dart \
+            lib/core/services/database_service.dart \
+            lib/core/services/encounter_history_service.dart \
+            test/lite_performance_test.dart
+
+      - name: Run Lite replay regression tests
+        working-directory: upstream
+        run: flutter test test/lite_performance_test.dart
 
       - name: Build split release APKs
         working-directory: upstream
@@ -160,7 +203,7 @@ jobs:
         shell: bash
         run: |
           cat > upstream/BUILD-METADATA.txt <<EOF
-          BlueMeter Lite version: 1.4.1+24
+          BlueMeter Lite version: 1.5.0+25
           Repository commit: $GITHUB_SHA
           Upstream repository: $UPSTREAM_REPOSITORY
           Upstream commit: $UPSTREAM_COMMIT
