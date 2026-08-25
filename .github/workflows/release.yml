@@ -2,22 +2,11 @@ name: Publish BlueMeter Lite Release
 
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag
-        required: true
-        default: "v1.4.1"
-        type: string
-      draft:
-        description: Create as draft for review
-        required: true
-        default: true
-        type: boolean
-      prerelease:
-        description: Mark as prerelease
-        required: true
-        default: false
-        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - "RELEASE-NOTES-v1.5.0.md"
 
 permissions:
   contents: write
@@ -26,8 +15,10 @@ env:
   UPSTREAM_REPOSITORY: https://github.com/jbourny/bluemetermobile.git
   UPSTREAM_COMMIT: 3c9d757cc0fd67971faf18447638c08044fb9b7c
   FLUTTER_VERSION: "3.44.7"
-  EXPECTED_VERSION_NAME: "1.4.1"
-  EXPECTED_VERSION_CODE: "24"
+  EXPECTED_VERSION_NAME: "1.5.0"
+  EXPECTED_VERSION_CODE: "25"
+  RELEASE_TAG: "v1.5.0"
+  RELEASE_NOTES: "RELEASE-NOTES-v1.5.0.md"
   ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
   ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
   ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -50,14 +41,15 @@ jobs:
             patch/apply_lite_patch.py \
             patch/apply_zdps_location_patch.py \
             patch/apply_performance_update.py \
-            patch/apply_release_version.py
+            patch/apply_engine_optimizations.py \
+            patch/apply_release_version.py \
+            patch/verify_ultra_low_impact.py
 
-      - name: Validate release inputs and signing secrets
+      - name: Validate release tag and signing secrets
         shell: bash
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           test "$RELEASE_TAG" = "v$EXPECTED_VERSION_NAME"
+          test -f "$RELEASE_NOTES"
           test -n "$ANDROID_KEYSTORE_BASE64"
           test -n "$ANDROID_KEYSTORE_PASSWORD"
           test -n "$ANDROID_KEY_ALIAS"
@@ -86,38 +78,32 @@ jobs:
       - name: Apply ZDPS encounter location patch
         run: python3 patch/apply_zdps_location_patch.py upstream
 
-      - name: Apply final performance update
+      - name: Apply overlay bridge performance update
         run: python3 patch/apply_performance_update.py upstream
 
-      - name: Apply v1.4.1 release version
+      - name: Apply ultra-low-impact engine update
+        run: python3 patch/apply_engine_optimizations.py upstream
+
+      - name: Apply v1.5.0 release version
         run: python3 patch/apply_release_version.py upstream
 
       - name: Verify patched release source
         working-directory: upstream
         shell: bash
         run: |
-          test "$(awk '/^version:/ {print $2}' pubspec.yaml)"             = "$EXPECTED_VERSION_NAME+$EXPECTED_VERSION_CODE"
+          test "$(awk '/^version:/ {print $2}' pubspec.yaml)" \
+            = "$EXPECTED_VERSION_NAME+$EXPECTED_VERSION_CODE"
           grep -q 'applicationId = "com.bluemeter.lite"' android/app/build.gradle.kts
-
-          # Encounter-location patch output and safety checks.
+          grep -q "static const String _liteVersion = '1.5.0';" lib/main.dart
+          grep -q "_LiteMeterType.damage" lib/main.dart
+          grep -q "_LiteMeterType.healing" lib/main.dart
+          grep -q "_LiteMeterType.tanking" lib/main.dart
           test -f lib/core/data/lite_scene_catalog.dart
-          test -f lib/views/encounter_history_view.dart
           test -f lib/core/analyze/processors/enter_scene_processor.dart
-          grep -q "_liteCaptureEncounterSceneIfNeeded" lib/core/state/data_storage.dart
-          grep -q "return value != _currentPlayerUuid.toInt();" lib/core/state/data_storage.dart
-          grep -q "_methodEnterScene = 0x00000003" lib/core/analyze/message_handler_registry.dart
-          grep -q "EnterSceneProcessor(storage)" lib/core/analyze/message_handler_registry.dart
-          grep -q "_attrSceneBasicId = 341" lib/core/analyze/processors/enter_scene_processor.dart
-          ! grep -q "_LiteSocialSceneDecoder" lib/core/analyze/message_analyzer_v2.dart
+          test -f test/lite_performance_test.dart
 
-          # Confirm the current low-impact overlay settings reached main.dart.
-          grep -q "static const int _maxDisplayedPlayers = 20;" lib/main.dart
-          grep -q "static const Duration _overlayRefreshInterval = Duration(seconds: 2);" lib/main.dart
-          grep -q "static const Duration _liteOverlayBridgeInterval" lib/main.dart
-          grep -q "_liteLastOverlayPayloadSignature" lib/main.dart
-          grep -q "_litePruneSeasonStrengthCache" lib/main.dart
-          grep -q "if (payloadSignature == _liteLastOverlayPayloadSignature)" lib/main.dart
-          grep -q "static const String _liteVersion = '1.4.1';" lib/main.dart
+      - name: Verify ultra-low-impact invariants
+        run: python3 patch/verify_ultra_low_impact.py upstream
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -135,7 +121,9 @@ jobs:
       - name: Configure permanent release signing
         shell: bash
         run: |
-          printf '%s' "$ANDROID_KEYSTORE_BASE64"             | base64 --decode             > upstream/android/app/bluemeter-lite-release.jks
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > upstream/android/app/bluemeter-lite-release.jks
 
           cat > upstream/android/key.properties <<EOF
           storePassword=$ANDROID_KEYSTORE_PASSWORD
@@ -147,6 +135,22 @@ jobs:
       - name: Install dependencies
         working-directory: upstream
         run: flutter pub get
+
+      - name: Analyze generated runtime files
+        working-directory: upstream
+        run: |
+          flutter analyze --no-fatal-infos \
+            lib/main.dart \
+            lib/core/analyze/packet_analyzer_v2.dart \
+            lib/core/analyze/message_analyzer_v2.dart \
+            lib/core/state/data_storage.dart \
+            lib/core/services/database_service.dart \
+            lib/core/services/encounter_history_service.dart \
+            test/lite_performance_test.dart
+
+      - name: Run Lite replay regression tests
+        working-directory: upstream
+        run: flutter test test/lite_performance_test.dart
 
       - name: Build signed release APKs
         working-directory: upstream
@@ -169,13 +173,17 @@ jobs:
           test -n "$FIRST_APK"
 
           CERT_OUTPUT_FILE="$(mktemp)"
-          "$APKSIGNER" verify --print-certs "$FIRST_APK"             > "$CERT_OUTPUT_FILE" 2>&1
+          "$APKSIGNER" verify --print-certs "$FIRST_APK" \
+            > "$CERT_OUTPUT_FILE" 2>&1
 
           echo "Certificate output from apksigner:"
           cat "$CERT_OUTPUT_FILE"
 
           CERT_LINE="$(
-            grep -i -m1 -E               'certificate[[:space:]]+SHA-256[[:space:]]+digest:'               "$CERT_OUTPUT_FILE"               || true
+            grep -i -m1 -E \
+              'certificate[[:space:]]+SHA-256[[:space:]]+digest:' \
+              "$CERT_OUTPUT_FILE" \
+              || true
           )"
 
           rm -f "$CERT_OUTPUT_FILE"
@@ -189,15 +197,15 @@ jobs:
 
       - name: Prepare permanent release assets
         shell: bash
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          VERSION="${RELEASE_TAG#v}"
           mkdir -p dist
 
-          cp upstream/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk             "dist/BlueMeter-Lite-$RELEASE_TAG-arm64-v8a.apk"
-          cp upstream/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk             "dist/BlueMeter-Lite-$RELEASE_TAG-armeabi-v7a.apk"
-          cp upstream/build/app/outputs/flutter-apk/app-x86_64-release.apk             "dist/BlueMeter-Lite-$RELEASE_TAG-x86_64.apk"
+          cp upstream/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "dist/BlueMeter-Lite-$RELEASE_TAG-arm64-v8a.apk"
+          cp upstream/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+            "dist/BlueMeter-Lite-$RELEASE_TAG-armeabi-v7a.apk"
+          cp upstream/build/app/outputs/flutter-apk/app-x86_64-release.apk \
+            "dist/BlueMeter-Lite-$RELEASE_TAG-x86_64.apk"
           cp SIGNING-CERT-SHA256.txt dist/
 
           cat > upstream/BUILD-METADATA.txt <<EOF
@@ -222,7 +230,7 @@ jobs:
           cp -R .github/workflows upstream/BLUEMETER_LITE_BUILD_KIT/
           cp BUILDING.md SIGNING-SETUP.md upstream/BLUEMETER_LITE_BUILD_KIT/
           cp LICENSE LICENSE-NOTICE.md THIRD-PARTY-NOTICES.md upstream/BLUEMETER_LITE_BUILD_KIT/
-          cp RELEASE-NOTES-v1.4.1.md upstream/BLUEMETER_LITE_BUILD_KIT/
+          cp "$RELEASE_NOTES" upstream/BLUEMETER_LITE_BUILD_KIT/
 
           (
             cd upstream
@@ -231,35 +239,23 @@ jobs:
 
           (
             cd dist
-            sha256sum               BlueMeter-Lite-"$RELEASE_TAG"-*.apk               BlueMeter-Lite-"$RELEASE_TAG"-source.zip               SIGNING-CERT-SHA256.txt               > SHA256SUMS.txt
+            sha256sum \
+              BlueMeter-Lite-"$RELEASE_TAG"-*.apk \
+              BlueMeter-Lite-"$RELEASE_TAG"-source.zip \
+              SIGNING-CERT-SHA256.txt \
+              > SHA256SUMS.txt
           )
 
       - name: Create GitHub Release
         shell: bash
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-          CREATE_DRAFT: ${{ inputs.draft }}
-          CREATE_PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          RELEASE_ARGS=(
-            "$RELEASE_TAG"
-            dist/*
-            --target "$GITHUB_SHA"
-            --title "BlueMeter Lite $RELEASE_TAG"
-            --notes-file RELEASE-NOTES-v1.4.1.md
-          )
-
-          if [ "$CREATE_DRAFT" = "true" ]; then
-            RELEASE_ARGS+=(--draft)
-          fi
-
-          if [ "$CREATE_PRERELEASE" = "true" ]; then
-            RELEASE_ARGS+=(--prerelease --latest=false)
-          else
-            RELEASE_ARGS+=(--latest)
-          fi
-
-          gh release create "${RELEASE_ARGS[@]}"
+          gh release create \
+            "$RELEASE_TAG" \
+            dist/* \
+            --target "$GITHUB_SHA" \
+            --title "BlueMeter Lite $RELEASE_TAG" \
+            --notes-file "$RELEASE_NOTES" \
+            --latest
 
       - name: Remove any remaining private signing files
         if: always()
