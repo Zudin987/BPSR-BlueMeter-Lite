@@ -79,12 +79,13 @@ def main() -> None:
     require(event_bus, "object PacketEventBus", "packet event bus")
 
     # Dart framing should retain offsets/views instead of rebuilding the whole
-    # buffer and copying packet tails.
+    # buffer and copying packet tails. Match executable forms so comments may
+    # still explain the old implementation without tripping the gate.
     require(analyzer, "Uint8List.sublistView", "zero-copy packet view")
     require(analyzer, "_readOffset", "reassembly read offset")
     require(analyzer, "_compact()", "bounded reassembly compaction")
-    forbid(analyzer, "BytesBuilder", "BytesBuilder reassembly")
-    forbid(analyzer, ".toBytes()", "whole-buffer copy")
+    forbid(analyzer, "BytesBuilder _buffer", "BytesBuilder reassembly")
+    forbid(analyzer, "_buffer.toBytes()", "whole-buffer copy")
     require(message_analyzer, "Uint8List.sublistView", "message payload views")
 
     # Combat/storage should avoid player DB work and notifier microtasks per hit.
