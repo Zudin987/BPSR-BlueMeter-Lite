@@ -11,8 +11,8 @@ import re
 import sys
 from pathlib import Path
 
-VERSION_NAME = "1.4.1"
-VERSION_CODE = 24
+VERSION_NAME = "1.5.0"
+VERSION_CODE = 25
 
 
 def fail(message: str) -> None:
