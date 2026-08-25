@@ -32,22 +32,23 @@ def main() -> None:
     if start == -1 or reset == -1:
         fail("could not locate legacy Lite combat block")
 
-    # Already normalized: nothing to do.
-    if start >= 2 and text[start - 2 : start] == "  ":
+    start_line = text.rfind("\n", 0, start) + 1
+    reset_line = text.rfind("\n", 0, reset) + 1
+
+    # If the field line is already class-indented, leave the generated source
+    # alone. This makes the normalizer harmless if the base patch is fixed later.
+    if text[start_line:start].startswith("  "):
         return
 
-    before_reset = text[start:reset]
-    normalized = "\n".join(
-        f"  {line}" if line else ""
-        for line in before_reset.split("\n")
+    block = text[start_line:reset_line]
+    normalized = "".join(
+        ("  " + line if line.strip() else line)
+        for line in block.splitlines(keepends=True)
     )
 
-    text = (
-        text[:start]
-        + normalized
-        + "  "
-        + text[reset:]
-    )
+    # Crucially, reset_line itself is not touched. It already comes from the
+    # original upstream class with correct indentation.
+    text = text[:start_line] + normalized + text[reset_line:]
     path.write_text(text, encoding="utf-8")
     print("Normalized legacy Lite DataStorage combat indentation.")
 
