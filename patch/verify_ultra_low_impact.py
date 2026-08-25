@@ -88,7 +88,8 @@ def main() -> None:
     require(message_analyzer, "Uint8List.sublistView", "message payload views")
 
     # Combat/storage should avoid player DB work and notifier microtasks per hit.
-    require(storage, "_litePendingTaken", "bounded unknown taken-damage staging")
+    require(storage, "_litePendingCombat", "bounded unknown combat staging")
+    require(storage, "_litePendingCombatLimit = 64", "combat staging cap")
     require(storage, "Timer(const Duration(seconds: 2)", "dirty notification throttle")
     require(storage, "_onAction(tick);", "tick-based hot action path")
     forbid(storage, "Future.microtask", "per-hit notifier microtask")
