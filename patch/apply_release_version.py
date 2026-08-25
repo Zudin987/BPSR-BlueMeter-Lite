@@ -54,7 +54,38 @@ def cleanup_generated_source(upstream: Path) -> None:
     ):
         main_text = main_text.replace(unused_import, "", 1)
 
-    # The Lite overlay does not support the old heavy player-detail card path.
+    # The Lite overlay does not support the old heavy player-detail selection
+    # path. Remove the two surviving HomePage writes before removing its field.
+    main_text, reset_selection_count = re.subn(
+        r"\n[ \t]*setState\(\(\) \{\n"
+        r"[ \t]*_selectedPlayerUid = null;\n"
+        r"[ \t]*\}\);",
+        "",
+        main_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if reset_selection_count != 1:
+        fail(
+            "expected one legacy selected-player reset write, "
+            f"found {reset_selection_count}"
+        )
+
+    main_text, set_selection_count = re.subn(
+        r"\n[ \t]*setState\(\(\) \{\n"
+        r"[ \t]*_selectedPlayerUid = newUid;\n"
+        r"[ \t]*\}\);",
+        "",
+        main_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if set_selection_count != 1:
+        fail(
+            "expected one legacy selected-player assignment, "
+            f"found {set_selection_count}"
+        )
+
     main_text = main_text.replace(
         "  String? _selectedPlayerUid; // UID du joueur sélectionné pour affichage de la carte\n",
         "",
@@ -77,21 +108,18 @@ def cleanup_generated_source(upstream: Path) -> None:
 
     main_dart.write_text(main_text, encoding="utf-8")
 
+    # Leave the pending-combat start-tick `!` operators intact. They are needed
+    # because the value is checked twice across mutable object properties, so
+    # Dart cannot promote the receiver through the second comparison.
     storage_text = storage_dart.read_text(encoding="utf-8")
-
-    # Dart flow analysis already promotes these pending fields after the explicit
-    # null checks. Keeping the old assertions produces fatal analyzer warnings.
-    for promoted_field in (
-        "pending.liteDamageStartTick!",
-        "pending.liteHealingStartTick!",
-        "pending.liteTakenStartTick!",
-    ):
-        storage_text = storage_text.replace(
-            promoted_field,
-            promoted_field[:-1],
-        )
-
     storage_dart.write_text(storage_text, encoding="utf-8")
+
+    # Temporary narrow diagnostics for the three remaining analyzer warnings.
+    # They are emitted during CI before analysis and do not affect generated code.
+    lines = storage_text.splitlines()
+    for line_no in (542, 592, 595):
+        if 1 <= line_no <= len(lines):
+            print(f"ANALYZER-CONTEXT {line_no}: {lines[line_no - 1]}")
 
 
 def main() -> None:
