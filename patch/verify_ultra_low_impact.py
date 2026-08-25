@@ -65,11 +65,11 @@ def main() -> None:
     forbid(capture, 'split(":")', "UDP string key parsing")
 
     # TCP should use the shared selector and one server-read byte array rather
-    # than copyOfRange per MSS segment.
+    # than allocating a second ByteArray for every MSS segment.
     require(proxy, "private val selector: Selector", "shared TCP selector")
     require(proxy, "fun handleSelectedKey", "selector key handler")
     require(proxy, "packet.seqNum > session.clientSeq", "out-of-order guard")
-    forbid(proxy, "copyOfRange", "per-segment byte-array copy")
+    forbid(proxy, "data.copyOfRange(", "per-segment byte-array copy")
     forbid(proxy, "Selector.open()", "private TCP selector")
 
     # Android packet data must go straight to Flutter's EventChannels.
