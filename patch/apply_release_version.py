@@ -108,18 +108,24 @@ def cleanup_generated_source(upstream: Path) -> None:
 
     main_dart.write_text(main_text, encoding="utf-8")
 
-    # Leave the pending-combat start-tick `!` operators intact. They are needed
-    # because the value is checked twice across mutable object properties, so
-    # Dart cannot promote the receiver through the second comparison.
     storage_text = storage_dart.read_text(encoding="utf-8")
-    storage_dart.write_text(storage_text, encoding="utf-8")
 
-    # Temporary narrow diagnostics for the three remaining analyzer warnings.
-    # They are emitted during CI before analysis and do not affect generated code.
-    lines = storage_text.splitlines()
-    for line_no in (542, 592, 595):
-        if 1 <= line_no <= len(lines):
-            print(f"ANALYZER-CONTEXT {line_no}: {lines[line_no - 1]}")
+    # Dart 3.12 promotes these nullable method parameters after the explicit
+    # guards in the scene/line path, so the legacy assertions are redundant.
+    final_warning_replacements = (
+        ("      lineId! > 0 &&\n", "      lineId > 0 &&\n"),
+        ("    _channelId = channelId!;\n", "    _channelId = channelId;\n"),
+        ("    _lineId = lineId!;\n", "    _lineId = lineId;\n"),
+    )
+    for old, new in final_warning_replacements:
+        count = storage_text.count(old)
+        if count != 1:
+            fail(f"expected one final analyzer cleanup anchor {old.strip()!r}, found {count}")
+        storage_text = storage_text.replace(old, new, 1)
+
+    # Keep the pending-combat start-tick `!` operators intact. Those mutable
+    # object properties are not promotable through their second comparison.
+    storage_dart.write_text(storage_text, encoding="utf-8")
 
 
 def main() -> None:
