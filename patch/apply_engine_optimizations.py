@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Apply BlueMeter Lite's ultra-low-impact runtime optimizations.
 
-Runs after the base Lite, ZDPS location and v1.4 bridge patches so the final
-source keeps the existing feature set while replacing the remaining hot paths.
+Runs against the generated pinned-upstream source after the existing Lite,
+location and overlay-bridge patches. Method replacements intentionally key on
+stable method names rather than exact whitespace so the build kit remains
+reproducible across harmless formatting changes.
 """
 
 from __future__ import annotations
@@ -25,37 +27,28 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
-def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
-    updated, count = re.subn(
-        pattern,
-        replacement,
-        text,
-        count=1,
-        flags=re.MULTILINE | re.DOTALL,
-    )
-    if count != 1:
-        fail(f"expected one {label}, found {count}")
-    return updated
-
-
-def replace_between(
+def replace_method_range(
     text: str,
-    start: str,
-    end: str,
+    start_token: str,
+    next_token: str,
     replacement: str,
     label: str,
 ) -> str:
-    start_index = text.find(start)
-    if start_index == -1:
-        fail(f"could not find start of {label}")
-    end_index = text.find(end, start_index)
-    if end_index == -1:
-        fail(f"could not find end of {label}")
+    start_token_index = text.find(start_token)
+    if start_token_index == -1:
+        fail(f"could not find start of {label}: {start_token}")
+    start = text.rfind("\n", 0, start_token_index) + 1
+
+    next_token_index = text.find(next_token, start_token_index + len(start_token))
+    if next_token_index == -1:
+        fail(f"could not find end of {label}: {next_token}")
+    end = text.rfind("\n", 0, next_token_index) + 1
+
     return (
-        text[:start_index]
-        + textwrap.dedent(replacement).rstrip()
+        text[:start]
+        + textwrap.dedent(replacement).strip("\n")
         + "\n\n"
-        + text[end_index:]
+        + text[end:]
     )
 
 
@@ -94,7 +87,7 @@ def main() -> None:
         old_widget_test.unlink()
 
     # ------------------------------------------------------------------
-    # Packet parser correctness + low-copy message slices.
+    # Native/Dart packet parsing: safe pooling + low-copy slices.
     # ------------------------------------------------------------------
     packet_path = kotlin_root / "Packet.kt"
     packet_text = packet_path.read_text(encoding="utf-8")
@@ -105,9 +98,8 @@ def main() -> None:
         buffer.position(0)
 """,
         """    private fun parse() {
-        // Packet instances are pooled. Clear every parsed field before reading
-        // a new buffer so a malformed/short packet can never inherit stale TCP
-        // metadata from the previous use.
+        // Packet instances are pooled. Reset every parsed field so a short or
+        // malformed packet can never inherit metadata from a previous packet.
         ipVersion = 0
         ipHeaderLength = 0
         protocol = 0
@@ -155,8 +147,8 @@ def main() -> None:
     message_path.write_text(message_text, encoding="utf-8")
 
     # ------------------------------------------------------------------
-    # Combat storage: no DB lookup/full DpsData for unknown NPC UIDs, dirty
-    # notifications are one-shot/throttled, and wall-clock work is <=1 Hz.
+    # Combat storage: one dirty notification per burst, no NPC player-DB
+    # candidates, bounded early-identity staging and lower wall-clock churn.
     # ------------------------------------------------------------------
     storage_path = root / "lib/core/state/data_storage.dart"
     storage = storage_path.read_text(encoding="utf-8")
@@ -175,9 +167,7 @@ def main() -> None:
     }
   }
 """,
-        """  // Lite dirty signal: one notification at most every two seconds.
-  // No permanent polling timer exists; the timer is created only after data
-  // actually changes and collapses a burst of combat packets into one update.
+        """  // One-shot dirty signal: no permanent polling timer exists.
   Timer? _notifyTimer;
   void _scheduleNotify() {
     _notifyTimer ??= Timer(const Duration(seconds: 2), () {
@@ -189,23 +179,24 @@ def main() -> None:
         "DataStorage dirty notification throttle",
     )
 
-    storage = replace_once(
+    storage, count = re.subn(
+        r"^(?P<indent>[ \t]*)final Map<Int64, String> "
+        r"_liteSubProfessionNames = \{\};$",
+        r"\g<indent>final Map<Int64, String> _liteSubProfessionNames = {};\n"
+        r"\g<indent>final Map<Int64, DpsData> _litePendingCombat = {};\n"
+        r"\g<indent>static const int _litePendingCombatLimit = 64;",
         storage,
-        "  final Map<Int64, String> _liteSubProfessionNames = {};\n",
-        """  final Map<Int64, String> _liteSubProfessionNames = {};
-  final Map<Int64, DpsData> _litePendingCombat = {};
-  static const int _litePendingCombatLimit = 64;
-""",
-        "pending unknown combat cache",
+        count=1,
+        flags=re.MULTILINE,
     )
+    if count != 1:
+        fail(f"expected one pending combat insertion point, found {count}")
 
     optimized_detection = r"""
   void _liteDetectSubProfession(
     Int64 uid,
     String? skillId,
   ) {
-    // Once detected, a player's specialization is stable for the encounter.
-    // Avoid parsing the same string skill ID for every hit/heal.
     if (_liteSubProfessionNames.containsKey(uid)) return;
 
     final detectedSubProfession = _liteSubProfessionFromSkillId(skillId);
@@ -215,16 +206,14 @@ def main() -> None:
   }
 
   DpsData? _liteMetricDataForUid(Int64 uid) {
-    // Known monsters never become DpsData/player-DB candidates.
     if (_monsterInfoDatas.containsKey(uid)) return null;
 
     if (uid == _currentPlayerUuid || _playerInfoDatas.containsKey(uid)) {
       return getOrCreateDpsData(uid);
     }
 
-    // A damage event can precede the nearby-player identity packet. Preserve a
-    // small bounded amount of early combat data and promote it if this UID is
-    // later confirmed as a player. Unknown NPCs are discarded when identified.
+    // Combat can arrive before a nearby-player identity packet. Keep only a
+    // small bounded staging set; promote confirmed players and discard monsters.
     var pending = _litePendingCombat[uid];
     if (pending != null) return pending;
 
@@ -273,12 +262,12 @@ def main() -> None:
     }
   }
 """
-    storage = replace_between(
+    storage = replace_method_range(
         storage,
-        "  void _liteDetectSubProfession(\n",
-        "  void addDamage(\n",
+        "void _liteDetectSubProfession(",
+        "void addDamage(",
         optimized_detection,
-        "optimized specialization/pending combat helpers",
+        "specialization/pending combat helpers",
     )
 
     optimized_damage = r"""
@@ -315,12 +304,12 @@ def main() -> None:
     _scheduleNotify();
   }
 """
-    storage = replace_between(
+    storage = replace_method_range(
         storage,
-        "  void addDamage(\n",
-        "  void addHealing(\n",
+        "void addDamage(",
+        "void addHealing(",
         optimized_damage,
-        "optimized Lite addDamage",
+        "Lite addDamage",
     )
 
     optimized_healing = r"""
@@ -348,12 +337,12 @@ def main() -> None:
     _scheduleNotify();
   }
 """
-    storage = replace_between(
+    storage = replace_method_range(
         storage,
-        "  void addHealing(\n",
-        "  void reset(\n",
+        "void addHealing(",
+        "void reset(",
         optimized_healing,
-        "optimized Lite addHealing",
+        "Lite addHealing",
     )
 
     storage = replace_once(
@@ -412,8 +401,6 @@ def main() -> None:
     if (forceRespawn) _deadMonsters.remove(uid);
     if (_deadMonsters.contains(uid)) return false;
 
-    // If this UID generated combat before its identity packet arrived, discard
-    // that bounded staging entry now that it is confirmed to be an NPC.
     _litePendingCombat.remove(uid);
 
     if (!_monsterInfoDatas.containsKey(uid)) {
@@ -429,63 +416,48 @@ def main() -> None:
     )
 
     optimized_action = r"""
-void _onAction(int tick) {
-  // Damage/heal packets already carry a millisecond combat tick. Use it to
-  // avoid constructing DateTime objects for every hit; wall-clock state only
-  // needs to be refreshed about once per second.
-  if (!_isCombatActive) {
-    final now = DateTime.now();
-    _isCombatActive = true;
-    _combatStartTime ??= now;
-    _lastActionTime = now;
-    _liteLastWallClockTick = tick;
-    return;
-  }
+  void _onAction(int tick) {
+    // Combat packets already contain millisecond ticks. Refresh wall-clock
+    // fields at most about once per second instead of constructing DateTime per hit.
+    if (!_isCombatActive) {
+      final now = DateTime.now();
+      _isCombatActive = true;
+      _combatStartTime ??= now;
+      _lastActionTime = now;
+      _liteLastWallClockTick = tick;
+      return;
+    }
 
-  final lastTick = _liteLastWallClockTick;
-  if (lastTick == null || tick < lastTick || tick - lastTick >= 1000) {
-    _lastActionTime = DateTime.now();
-    _liteLastWallClockTick = tick;
+    final lastTick = _liteLastWallClockTick;
+    if (lastTick == null || tick < lastTick || tick - lastTick >= 1000) {
+      _lastActionTime = DateTime.now();
+      _liteLastWallClockTick = tick;
+    }
   }
-}
 """
-    storage = replace_between(
+    storage = replace_method_range(
         storage,
         "void _onAction() {",
-        "  Map<Int64, PlayerInfo> get playerInfoDatas",
+        "Map<Int64, PlayerInfo> get playerInfoDatas",
         optimized_action,
         "tick-based Lite action clock",
     )
 
-    # Both the automatic encounter clear and manual reset must release bounded
-    # staging data immediately.
-    old_clear = "  _fullDpsDatas.clear();\n  _liteSubProfessionNames.clear();"
-    clear_count = storage.count(old_clear)
+    # Release staged unknown identities on either automatic or manual reset.
+    clear_anchor = "  _fullDpsDatas.clear();\n  _liteSubProfessionNames.clear();"
+    clear_count = storage.count(clear_anchor)
     if clear_count != 2:
-        fail(f"expected two Lite encounter clear blocks, found {clear_count}")
+        fail(f"expected two encounter clear blocks, found {clear_count}")
     storage = storage.replace(
-        old_clear,
-        "  _fullDpsDatas.clear();\n  _liteSubProfessionNames.clear();\n  _litePendingCombat.clear();",
-    )
-
-    storage = replace_once(
-        storage,
-        "  _isCombatActive = false;\n  _liteResetDetectionState();",
-        "  _isCombatActive = false;\n  _liteLastWallClockTick = null;\n  _liteResetDetectionState();",
-        "automatic encounter wall clock clear",
-    )
-    storage = replace_once(
-        storage,
-        "    _isCombatActive = false;\n    _liteResetDetectionState();",
-        "    _isCombatActive = false;\n    _liteLastWallClockTick = null;\n    _liteResetDetectionState();",
-        "manual reset wall clock clear",
+        clear_anchor,
+        clear_anchor + "\n  _litePendingCombat.clear();",
     )
 
     storage_path.write_text(storage, encoding="utf-8")
 
     # ------------------------------------------------------------------
-    # Flutter bridge/rendering: DataStorage's dirty notification is the only
-    # 2-second throttle. Remove permanent polling and the second overlay timer.
+    # Flutter bridge/rendering: DataStorage dirty events are the only visible
+    # update throttle. Remove permanent polling and the overlay's second timer.
     # ------------------------------------------------------------------
     main_path = root / "lib/main.dart"
     dart = main_path.read_text(encoding="utf-8")
@@ -522,7 +494,7 @@ void _onAction(int tick) {
         "overlay provider wrapper",
     )
 
-    dart = re.sub(
+    dart, _ = re.subn(
         r"^[ \t]*static const Duration _liteOverlayBridgeInterval =\n"
         r"[ \t]*Duration\(seconds: 2\);\n",
         "",
@@ -530,23 +502,18 @@ void _onAction(int tick) {
         count=1,
         flags=re.MULTILINE,
     )
-
     dart = dart.replace("  Timer? _overlayUpdateTimer;\n", "", 1)
     dart = dart.replace("    _overlayUpdateTimer?.cancel();\n", "", 1)
 
-    periodic_pattern = (
-        r"\n[ \t]*// Performance: bridge visible meter data at most once every two seconds\n"
-        r"[ \t]*_overlayUpdateTimer = Timer\.periodic\([^;]+?\n[ \t]*\);\n"
-    )
     dart, periodic_count = re.subn(
-        periodic_pattern,
+        r"\n[ \t]*// Performance: bridge visible meter data at most once every two seconds\n"
+        r"[ \t]*_overlayUpdateTimer = Timer\.periodic\([^;]+?\n[ \t]*\);\n",
         "\n",
         dart,
         count=1,
         flags=re.MULTILINE | re.DOTALL,
     )
     if periodic_count != 1:
-        # Fall back to matching only the Timer.periodic block if comments changed.
         dart, periodic_count = re.subn(
             r"\n[ \t]*_overlayUpdateTimer = Timer\.periodic\("
             r"_liteOverlayBridgeInterval, \(_\) \{\n"
@@ -571,7 +538,6 @@ void _onAction(int tick) {
 """,
         "event-driven overlay callback",
     )
-    dart = dart.replace("    storage.checkTimeout();\n", "", 1)
 
     dart = replace_once(
         dart,
@@ -625,22 +591,21 @@ void _onAction(int tick) {
         "dispose event-driven overlay listener",
     )
 
-    # initializeLiteEncounterState() already performs gated history cleanup.
+    # initializeLiteEncounterState() already requests the gated cleanup.
     dart = dart.replace(
         "    unawaited(EncounterHistoryService().deleteExpired());\n",
         "",
         1,
     )
 
-    # The main isolate now coalesces notifications. Apply every delivered
-    # payload immediately in the overlay isolate and remove the second timer.
     dart = dart.replace(
         "  static const Duration _overlayRefreshInterval = Duration(seconds: 2);\n",
         "",
         1,
     )
     dart = dart.replace("  Timer? _liteUiFlushTimer;\n", "", 1)
-    dart = dart.replace(
+    dart = replace_once(
+        dart,
         """      // Keep only the newest cumulative snapshot. No hit is discarded because
       // totals are still calculated by DataStorage before reaching the overlay.
       _liteUiFlushTimer ??= Timer(
@@ -648,12 +613,11 @@ void _onAction(int tick) {
         _flushLiteUiPayload,
       );
 """,
-        """      // Main-isolate dirty notifications are already rate-limited.
-      // Apply the newest cumulative snapshot immediately here so there is only
-      // one throttle and no extra two-second visual delay.
+        """      // The main isolate already coalesces dirty state. Apply the delivered
+      // cumulative snapshot immediately so there is no second visual delay.
       _flushLiteUiPayload();
 """,
-        1,
+        "overlay second throttle",
     )
     dart = dart.replace("    _liteUiFlushTimer = null;\n", "", 1)
     dart = dart.replace("    _liteUiFlushTimer?.cancel();\n", "", 1)
@@ -662,7 +626,7 @@ void _onAction(int tick) {
     main_path.write_text(dart, encoding="utf-8")
 
     # ------------------------------------------------------------------
-    # Remove dependencies that Lite no longer imports at runtime.
+    # Dependencies/assets unused by the final Lite runtime.
     # ------------------------------------------------------------------
     pubspec_path = root / "pubspec.yaml"
     pubspec = pubspec_path.read_text(encoding="utf-8")
