@@ -53,6 +53,7 @@ jobs:
             patch/apply_lite_patch.py \
             patch/apply_zdps_location_patch.py \
             patch/apply_performance_update.py \
+            patch/normalize_generated_source.py \
             patch/apply_engine_optimizations.py \
             patch/apply_release_version.py \
             patch/verify_ultra_low_impact.py
@@ -77,6 +78,9 @@ jobs:
 
       - name: Apply overlay bridge performance update
         run: python3 patch/apply_performance_update.py upstream
+
+      - name: Normalize generated Lite source
+        run: python3 patch/normalize_generated_source.py upstream
 
       - name: Apply ultra-low-impact engine update
         run: python3 patch/apply_engine_optimizations.py upstream
