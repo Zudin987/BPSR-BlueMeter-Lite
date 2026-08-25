@@ -2,6 +2,8 @@
 
 A lightweight Android combat meter for **Blue Protocol: Star Resonance**. It shows DPS, healing, and damage received directly over the game without requiring a PC.
 
+**Website:** https://zudin987.github.io/projects/bluemeter/
+
 > **Unofficial community project.** Not affiliated with the game's developers or publishers.
 
 ## Quick start
