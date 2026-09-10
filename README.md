@@ -2,7 +2,7 @@
 
 Android combat meter for **Blue Protocol: Star Resonance**. View DPS, healing and damage received in a movable overlay. No PC is needed.
 
-[Download latest APKs](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest) · [Project website](https://zudin987.github.io/projects/bluemeter/) · [Report an issue](https://github.com/Zudin987/BPSR-BlueMeter-Lite/issues)
+[Download latest APKs](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest) · [Project website](https://zudin987.github.io/projects/bluemeter/) · [Pull requests](https://github.com/Zudin987/BPSR-BlueMeter-Lite/pulls)
 
 ![BlueMeter Lite expanded overlay showing player damage, DPS and contribution above BPSR gameplay](docs/screenshots/bluemeter-lite-expanded.png)
 
@@ -28,7 +28,7 @@ The Android VPN is used for **local packet capture**, not a remote VPN service. 
 
 Supported client families include HaoPlay SEA, A Plus Japan/Global, Taiwan/Hong Kong/Macau and the X.D. regional client. Game/protocol updates may require a BlueMeter update.
 
-If the overlay is missing, check the display-over-other-apps permission. If it has no data, check that capture is running, no other VPN has replaced it, and your client is supported. Include your app version, Android version and game region when reporting an issue.
+If the overlay is missing, check the display-over-other-apps permission. If it has no data, check that capture is running, no other VPN has replaced it, and your client is supported. When investigating a problem, record your app version, Android version and game region. Issue tracking is disabled for this repository; proposed fixes can be submitted through pull requests.
 
 ## Source and credits
 
