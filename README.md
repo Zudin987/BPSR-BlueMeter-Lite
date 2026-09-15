@@ -4,7 +4,17 @@ Android combat meter for **Blue Protocol: Star Resonance**. View DPS, healing an
 
 [Download latest APKs](https://github.com/Zudin987/BPSR-BlueMeter-Lite/releases/latest) · [Project website](https://zudin987.github.io/projects/bluemeter/) · [Pull requests](https://github.com/Zudin987/BPSR-BlueMeter-Lite/pulls)
 
-![BlueMeter Lite expanded overlay showing player damage, DPS and contribution above BPSR gameplay](docs/screenshots/bluemeter-lite-expanded.png)
+<p align="center">
+  <img src="docs/screenshots/bluemeter-lite-expanded.png" alt="BlueMeter Lite expanded overlay showing player damage, DPS and contribution above BPSR gameplay" width="900">
+  <br>
+  <em>Expanded mode</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/bluemeter-lite-compact.png" alt="BlueMeter Lite compact overlay showing a smaller combat ranking above BPSR gameplay" width="900">
+  <br>
+  <em>Compact mode</em>
+</p>
 
 ## Install and start
 
